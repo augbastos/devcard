@@ -48,13 +48,54 @@ export default {
   },
 };
 
+// Ingest hardening: strict types, plausibility caps, batch/body limits.
+// A single event can't claim more lines than a very large file write, and a
+// batch can't exceed what the hook itself sends. Anything invalid is skipped,
+// never inserted — gross inflation requires thousands of valid-looking
+// requests, which the caps make slow and visible.
+const MAX_BATCH = 100;
+const MAX_BODY_BYTES = 262144; // 256 KB
+const MAX_LINES_PER_EVENT = 20000;
+const MAX_REPO_COUNT = 10000;
+const EVENT_TYPES = new Set(["edit", "write", "commit"]);
+
+function sanitizeEvent(e: unknown): IngestEvent | null {
+  if (typeof e !== "object" || e === null) return null;
+  const ev = e as Record<string, unknown>;
+  const ts = ev.ts;
+  const eventType = ev.event_type;
+  if (typeof ts !== "number" || !Number.isFinite(ts) || ts < 1600000000 || ts > 4102444800) return null;
+  if (typeof eventType !== "string" || !EVENT_TYPES.has(eventType)) return null;
+  const language = ev.language;
+  if (language !== null && language !== undefined && (typeof language !== "string" || language.length > 32)) return null;
+  const la = ev.lines_added;
+  const lr = ev.lines_removed;
+  if (typeof la !== "number" || !Number.isInteger(la) || la < 0 || la > MAX_LINES_PER_EVENT) return null;
+  if (typeof lr !== "number" || !Number.isInteger(lr) || lr < 0 || lr > MAX_LINES_PER_EVENT) return null;
+  const id = ev.id;
+  if (id !== undefined && (typeof id !== "number" || !Number.isInteger(id) || id < 0)) return null;
+  return {
+    id: id as number | undefined,
+    ts: Math.floor(ts),
+    language: (language as string | null | undefined) ?? null,
+    lines_added: la,
+    lines_removed: lr,
+    event_type: eventType,
+  };
+}
+
 async function handleIngest(request: Request, env: Env): Promise<Response> {
   const token = request.headers.get("X-Devcard-Token");
   if (!token || token !== env.INGEST_TOKEN) {
     return new Response("unauthorized", { status: 401 });
   }
 
-  let body: { events: IngestEvent[]; repo_count?: number };
+  const contentLength = Number(request.headers.get("Content-Length") ?? 0);
+  if (contentLength > MAX_BODY_BYTES) {
+    return new Response("payload too large", { status: 413 });
+  }
+
+  let body: { events: unknown; repo_count?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -64,17 +105,29 @@ async function handleIngest(request: Request, env: Env): Promise<Response> {
   if (!Array.isArray(body.events)) {
     return new Response("events must be an array", { status: 400 });
   }
+  if (body.events.length > MAX_BATCH) {
+    return new Response("batch too large", { status: 400 });
+  }
 
-  const statements = body.events.map((e) =>
+  const valid: IngestEvent[] = [];
+  let skipped = 0;
+  for (const raw of body.events) {
+    const ev = sanitizeEvent(raw);
+    if (ev) valid.push(ev);
+    else skipped += 1;
+  }
+
+  const statements = valid.map((e) =>
     env.DB.prepare(
       "INSERT OR IGNORE INTO events (ts, language, lines_added, lines_removed, event_type, client_event_id) VALUES (?, ?, ?, ?, ?, ?)"
     ).bind(e.ts, e.language, e.lines_added, e.lines_removed, e.event_type, e.id ?? null)
   );
 
-  if (typeof body.repo_count === "number") {
+  const rc = body.repo_count;
+  if (typeof rc === "number" && Number.isInteger(rc) && rc >= 0 && rc <= MAX_REPO_COUNT) {
     statements.push(
       env.DB.prepare("UPDATE stats_snapshot SET repo_count = ?, updated_at = ? WHERE id = 1").bind(
-        body.repo_count,
+        rc,
         Math.floor(Date.now() / 1000)
       )
     );
@@ -84,7 +137,7 @@ async function handleIngest(request: Request, env: Env): Promise<Response> {
     await env.DB.batch(statements);
   }
 
-  return Response.json({ inserted: body.events.length });
+  return Response.json({ inserted: valid.length, skipped });
 }
 
 interface Strings {
@@ -93,12 +146,14 @@ interface Strings {
   edits: string;
   commits: string;
   repos: string;
+  since: string;
+  events: string;
 }
 
 const STRINGS: Record<string, Strings> = {
-  en: { lines: "lines of code", activeDays: "active days (30d)", edits: "code edits", commits: "commits", repos: "repos" },
-  pt: { lines: "linhas de código", activeDays: "dias ativos (30d)", edits: "edições de código", commits: "commits", repos: "repos" },
-  es: { lines: "líneas de código", activeDays: "días activos (30d)", edits: "ediciones de código", commits: "commits", repos: "repos" },
+  en: { lines: "lines of code", activeDays: "active days (30d)", edits: "code edits", commits: "commits", repos: "repos", since: "tracking since", events: "events" },
+  pt: { lines: "linhas de código", activeDays: "dias ativos (30d)", edits: "edições de código", commits: "commits", repos: "repos", since: "medindo desde", events: "eventos" },
+  es: { lines: "líneas de código", activeDays: "días activos (30d)", edits: "ediciones de código", commits: "commits", repos: "repos", since: "midiendo desde", events: "eventos" },
 };
 
 function pickLang(request: Request, url: URL): Strings {
@@ -157,6 +212,32 @@ async function hasSponsors(user: string): Promise<boolean> {
   return active;
 }
 
+async function fetchStars(user: string, repo: string): Promise<number | null> {
+  const url = `https://api.github.com/repos/${user}/${repo}`;
+  const cache = caches.default;
+  const cacheKey = new Request(url + "#devcard-stars");
+  const hit = await cache.match(cacheKey);
+  if (hit) {
+    const v = await hit.text();
+    return v === "" ? null : Number(v);
+  }
+  let stars: number | null = null;
+  try {
+    const resp = await fetch(url, { headers: { "User-Agent": "devcard/1.0", "Accept": "application/vnd.github+json" } });
+    if (resp.ok) {
+      const data = (await resp.json()) as { stargazers_count?: number };
+      if (typeof data.stargazers_count === "number") stars = data.stargazers_count;
+    }
+  } catch {
+    stars = null;
+  }
+  await cache.put(
+    cacheKey,
+    new Response(stars === null ? "" : String(stars), { headers: { "Cache-Control": "public, max-age=86400" } })
+  );
+  return stars;
+}
+
 async function handleSvg(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const requestedUser = url.searchParams.get("user");
@@ -187,6 +268,12 @@ async function handleSvg(request: Request, env: Env): Promise<Response> {
     "SELECT kind, label FROM profile_entries ORDER BY created_at DESC LIMIT 8"
   ).all();
 
+  const pinRows = await env.DB.prepare(
+    "SELECT repo, note FROM pinned_repos ORDER BY position ASC, id ASC LIMIT 3"
+  ).all();
+
+  const firstRow = await env.DB.prepare("SELECT MIN(ts) as first_ts, COUNT(*) as n FROM events").first();
+
   const languages = (langRows.results as { language: string; total: number }[]) ?? [];
   const totalLines = languages.reduce((sum, l) => sum + l.total, 0);
   const repoCount = (snapshot as { repo_count: number } | null)?.repo_count ?? 0;
@@ -198,6 +285,19 @@ async function handleSvg(request: Request, env: Env): Promise<Response> {
   const totalActions = eventCounts
     .filter((r) => r.event_type === "edit" || r.event_type === "write")
     .reduce((sum, r) => sum + r.n, 0);
+
+  const rawPins = (pinRows.results as { repo: string; note: string | null }[]) ?? [];
+  const pins = await Promise.all(
+    rawPins.map(async (p) => ({
+      repo: p.repo,
+      note: p.note,
+      stars: await fetchStars(env.GITHUB_USERNAME, p.repo),
+    }))
+  );
+
+  const provenance = firstRow as { first_ts: number | null; n: number } | null;
+  const firstTs = provenance?.first_ts ?? null;
+  const totalEvents = provenance?.n ?? 0;
 
   const svg = renderCard({
     languages,
@@ -211,6 +311,9 @@ async function handleSvg(request: Request, env: Env): Promise<Response> {
     t,
     avatar,
     sponsorable,
+    pins,
+    firstTs,
+    totalEvents,
   });
 
   return new Response(svg, {
@@ -243,6 +346,9 @@ function renderCard(data: {
   t: Strings;
   avatar: string | null;
   sponsorable: boolean;
+  pins: { repo: string; note: string | null; stars: number | null }[];
+  firstTs: number | null;
+  totalEvents: number;
 }): string {
   const W = 480;
   const PAD = 24;
@@ -296,8 +402,36 @@ function renderCard(data: {
 
   const legendBottom = data.languages.length === 0 ? legendTop : legendTop + (Math.min(data.languages.length, 3) - 1) * rowH;
 
+  // -- pinned repos: up to 3 linked boxes --
+  const truncate = (s: string, max: number) => (s.length > max ? s.slice(0, max - 1) + "…" : s);
+  let pinnedSvg = "";
+  let pinnedBottom = legendBottom;
+  if (data.pins.length > 0) {
+    const pinTop = legendBottom + 16;
+    const boxH = 42;
+    const gap = 10;
+    const boxW = (barW - gap * (data.pins.length - 1)) / data.pins.length;
+    pinnedSvg = data.pins
+      .map((p, i) => {
+        const bx = PAD + i * (boxW + gap);
+        const starTxt = p.stars !== null ? `★ ${p.stars}` : "";
+        const noteTxt = truncate(p.note ?? "", Math.floor(boxW / 6.2) - (starTxt ? starTxt.length + 2 : 0));
+        const sub = [starTxt, noteTxt].filter(Boolean).join("  ");
+        return (
+          `<a href="https://github.com/${escapeXml(data.githubUser)}/${escapeXml(p.repo)}" target="_blank">` +
+          `<rect class="pill" x="${bx.toFixed(1)}" y="${pinTop}" width="${boxW.toFixed(1)}" height="${boxH}" rx="8"/>` +
+          `<path class="mut" d="M0,-5 h7 a2,2 0 0 1 2,2 v8 h-9 a2,2 0 0 0 -2,2 v-10 a2,2 0 0 1 2,-2 Z M-2,7 h11 v3 h-9 a2,2 0 0 1 -2,-2 Z" transform="translate(${(bx + 14).toFixed(1)},${pinTop + 16}) scale(0.9)"/>` +
+          `<text class="txt" x="${(bx + 28).toFixed(1)}" y="${pinTop + 18}" ${sans} font-size="12" font-weight="700">${escapeXml(truncate(p.repo, Math.floor(boxW / 7.5)))}</text>` +
+          `<text class="mut" x="${(bx + 10).toFixed(1)}" y="${pinTop + 33}" ${sans} font-size="10.5">${escapeXml(sub)}</text>` +
+          `</a>`
+        );
+      })
+      .join("\n  ");
+    pinnedBottom = pinTop + boxH;
+  }
+
   // -- footer stats --
-  const divY = legendBottom + 16;
+  const divY = pinnedBottom + 16;
   const footY = divY + 26;
   const stat = (xPos: number, n: string, label: string) =>
     `<text x="${xPos}" y="${footY}" font-size="12"><tspan class="txt" ${mono} font-weight="700">${n}</tspan><tspan class="mut" ${sans}> ${escapeXml(label)}</tspan></text>`;
@@ -306,8 +440,16 @@ function renderCard(data: {
     stat(PAD + 176, String(data.totalCommits), t.commits) +
     stat(PAD + 322, String(data.activeDays), t.activeDays);
 
+  // -- provenance: honest signal of how long/how much has been measured --
+  const sinceDate = data.firstTs
+    ? new Date(data.firstTs * 1000).toISOString().slice(0, 10)
+    : null;
+  const provenanceLine = sinceDate
+    ? `<text class="faint" x="${W - PAD}" y="${footY + 18}" ${mono} font-size="9.5" text-anchor="end">${escapeXml(t.since)} ${sinceDate} · ${data.totalEvents.toLocaleString("en-US")} ${escapeXml(t.events)}</text>`
+    : "";
+
   // -- pills: sponsor first (if active), then badges with kind icons --
-  const pillTop = footY + 20;
+  const pillTop = footY + 26;
   let pillX = PAD;
   let pillRow = 0;
   const pillParts: string[] = [];
@@ -349,12 +491,12 @@ function renderCard(data: {
 
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="devcard ${escapeXml(data.githubUser)}">
   <style>
-    .bg{fill:#ffffff}.brd{stroke:#d8dce4}.txt{fill:#1b1f27}.mut{fill:#6b7280}
+    .bg{fill:#ffffff}.brd{stroke:#d8dce4}.txt{fill:#1b1f27}.mut{fill:#6b7280}.faint{fill:#9aa1ac}
     .track{fill:#edeff4}.sep{fill:#ffffff}
     .pill{fill:#f2f4f8;stroke:#d8dce4}.pill-sp{fill:#fff0f3;stroke:#f1b8c4}.heart{fill:#d1355f}
     .link{fill:#0969da}.avbrd{stroke:#d8dce4}
     @media(prefers-color-scheme:dark){
-      .bg{fill:#0f1117}.brd{stroke:#262b38}.txt{fill:#e6e9f0}.mut{fill:#8b93a3}
+      .bg{fill:#0f1117}.brd{stroke:#262b38}.txt{fill:#e6e9f0}.mut{fill:#8b93a3}.faint{fill:#5b6270}
       .track{fill:#1e2230}.sep{fill:#0f1117}
       .pill{fill:#171a24;stroke:#262b38}.pill-sp{fill:#2a1620;stroke:#6e2a3d}.heart{fill:#f47892}
       .link{fill:#58a6ff}.avbrd{stroke:#262b38}
@@ -383,8 +525,11 @@ function renderCard(data: {
 
   ${legend}
 
+  ${pinnedSvg}
+
   <line class="brd" x1="${PAD}" y1="${divY}" x2="${W - PAD}" y2="${divY}" stroke-width="1"/>
   ${footer}
+  ${provenanceLine}
   ${pills}
 </svg>`;
 }

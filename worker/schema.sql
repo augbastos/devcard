@@ -25,3 +25,11 @@ CREATE TABLE IF NOT EXISTS profile_entries (
   detail TEXT,
   created_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS pinned_repos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo TEXT NOT NULL UNIQUE,
+  note TEXT,
+  position INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
