@@ -49,7 +49,8 @@ def parse_event(payload):
         content = tool_input.get("content", "")
         return {
             "ts": now, "language": language, "lines_added": count_lines(content),
-            "lines_removed": 0, "event_type": "write", "project_key": cwd,
+            "lines_removed": 0, "bytes_added": len(content.encode("utf-8")),
+            "event_type": "write", "project_key": cwd,
         }
 
     if tool_name == "Edit":
@@ -61,7 +62,8 @@ def parse_event(payload):
         new_string = tool_input.get("new_string", "")
         return {
             "ts": now, "language": language, "lines_added": count_lines(new_string),
-            "lines_removed": count_lines(old_string), "event_type": "edit", "project_key": cwd,
+            "lines_removed": count_lines(old_string), "bytes_added": len(new_string.encode("utf-8")),
+            "event_type": "edit", "project_key": cwd,
         }
 
     if tool_name == "Bash":
@@ -69,7 +71,8 @@ def parse_event(payload):
         if "git commit" in command:
             return {
                 "ts": now, "language": None, "lines_added": 0,
-                "lines_removed": 0, "event_type": "commit", "project_key": cwd,
+                "lines_removed": 0, "bytes_added": 0,
+                "event_type": "commit", "project_key": cwd,
             }
         return None
 
@@ -87,11 +90,16 @@ def init_db(db_path=DB_PATH):
             language TEXT,
             lines_added INTEGER NOT NULL DEFAULT 0,
             lines_removed INTEGER NOT NULL DEFAULT 0,
+            bytes_added INTEGER NOT NULL DEFAULT 0,
             event_type TEXT NOT NULL,
             project_key TEXT NOT NULL,
             synced INTEGER NOT NULL DEFAULT 0
         )
     """)
+    try:
+        conn.execute("ALTER TABLE events ADD COLUMN bytes_added INTEGER NOT NULL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # column already exists (fresh dbs get it from CREATE TABLE)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS known_repos (
             project_key TEXT PRIMARY KEY,
@@ -105,10 +113,10 @@ def init_db(db_path=DB_PATH):
 def insert_event(conn, event):
     """Insert a normalized event and record its project in known_repos. Returns the new row id."""
     cur = conn.execute(
-        "INSERT INTO events (ts, language, lines_added, lines_removed, event_type, project_key) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO events (ts, language, lines_added, lines_removed, bytes_added, event_type, project_key) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (event["ts"], event["language"], event["lines_added"], event["lines_removed"],
-         event["event_type"], event["project_key"]),
+         event.get("bytes_added", 0), event["event_type"], event["project_key"]),
     )
     conn.execute(
         "INSERT OR IGNORE INTO known_repos (project_key, first_seen) VALUES (?, ?)",
@@ -127,13 +135,13 @@ def repo_count(conn):
 def get_unsynced_events(conn, limit=50):
     """Return up to `limit` events not yet marked synced, oldest first."""
     rows = conn.execute(
-        "SELECT id, ts, language, lines_added, lines_removed, event_type "
+        "SELECT id, ts, language, lines_added, lines_removed, bytes_added, event_type "
         "FROM events WHERE synced = 0 ORDER BY id ASC LIMIT ?",
         (limit,),
     ).fetchall()
     return [
         {"id": r[0], "ts": r[1], "language": r[2], "lines_added": r[3],
-         "lines_removed": r[4], "event_type": r[5]}
+         "lines_removed": r[4], "bytes_added": r[5], "event_type": r[6]}
         for r in rows
     ]
 
