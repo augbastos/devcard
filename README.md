@@ -3,6 +3,14 @@
 **A live, embeddable dev stats card — powered by your real AI-assisted coding activity, not your keystrokes.**
 
 <p align="center">
+  <img src="https://img.shields.io/badge/Claude_Code-live_per--edit-8957e5" alt="Claude Code" />
+  <img src="https://img.shields.io/badge/Codex-per--commit-3fb950" alt="Codex" />
+  <img src="https://img.shields.io/badge/Cursor-per--commit-3fb950" alt="Cursor" />
+  <img src="https://img.shields.io/badge/aider_·_Windsurf_·_local_models-per--commit-3fb950" alt="aider, Windsurf, local models" />
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT" />
+</p>
+
+<p align="center">
   <img src="https://card.devcard.workers.dev/svg?user=augbastos" alt="devcard — live example" />
 </p>
 
@@ -47,20 +55,28 @@ git clone https://github.com/augbastos/devcard && cd devcard && python setup.py
 
 The wizard does everything: creates your D1 database, applies the schema, generates and stores your ingest token, deploys your Worker, installs the capture hook, runs an end-to-end smoke test, and prints your ready-to-paste embed snippet. Two questions, ~2 minutes.
 
-## Capture modes — Claude Code, Codex, local models, anything
+## Works with your agent
 
-Pick **one** mode per machine (both together would double-count the same lines):
+Pick **one** capture mode per machine (both together would double-count the same lines):
 
-| Mode | How it captures | Works with |
-|---|---|---|
-| `claude` | Live, per-edit, via Claude Code's `PostToolUse` hook | Claude Code |
-| `git` | Per-commit, from the real `git diff --numstat` of each commit | **Codex, Cursor, aider, local models, hand-typed code — anything that commits** |
+| Your tool | Mode | Granularity | How |
+|---|---|---|---|
+| **Claude Code** | `claude` | Live, per-edit — card moves while you code | Native `PostToolUse` hook (installed by `setup.py`) |
+| **OpenAI Codex** | `git` | Per-commit, real diff stats | git `post-commit` hook |
+| **Cursor** | `git` | Per-commit, real diff stats | git `post-commit` hook |
+| **aider / Windsurf / Cline** | `git` | Per-commit, real diff stats | git `post-commit` hook |
+| **Local models** (Ollama, LM Studio, llama.cpp + anything) | `git` | Per-commit, real diff stats | git `post-commit` hook |
+| **Hand-typed code** | `git` | Per-commit, real diff stats | git `post-commit` hook |
 
-The `git` mode hooks git itself, not the agent — so it's universal. Install it into any repos you want tracked (appends safely to existing hooks like husky):
+The `git` mode hooks **git itself, not the agent** — that's why the compatibility list is "anything that commits", with zero per-tool integration code to maintain. It reads each commit's real `git diff --numstat` (lines and bytes per language), so the numbers are actual diff stats, not estimates.
+
+Install it into any repos you want tracked (appends safely to existing hooks like husky — nothing gets overwritten):
 
 ```bash
 python hook/install_git_hook.py C:/path/to/your/projects
 ```
+
+New agent hits the market tomorrow? If it commits to git, your card already supports it.
 
 <details>
 <summary><strong>Manual setup</strong> (if you prefer to see every step)</summary>
