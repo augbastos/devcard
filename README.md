@@ -123,6 +123,17 @@ npx wrangler d1 execute devcard --remote --command \
 
 `kind` is one of `badge` | `certification` | `award`.
 
+## Pinned repos
+
+Highlight up to 3 repos on your card — each renders as a linked box with live star count:
+
+```bash
+npx wrangler d1 execute devcard --remote --command \
+  "INSERT INTO pinned_repos (repo, note, position, created_at) VALUES ('wavr', 'privacy-first home presence', 1, strftime('%s','now'))"
+```
+
+`repo` must be a public repo under your GitHub account. `note` is an optional one-liner. Lowest `position` renders first.
+
 ## Customize it (please do)
 
 MIT licensed — fork it and make it yours. Everything visual lives in one function (`renderCard` in `worker/src/index.ts`):
@@ -143,6 +154,26 @@ MIT licensed — fork it and make it yours. Everything visual lives in one funct
 | File names, code content | ❌ never stored | ❌ |
 
 The sync payload is built from a SQL projection that physically excludes project identifiers, and the public schema has nowhere to put them. Ingest is token-gated and idempotent.
+
+## Security model
+
+The card is designed so it can't be turned against its owner:
+
+- **No inbound surface on your machine.** The hook opens no ports and listens to nothing — it only makes outbound HTTPS calls to *your* Worker. There is nothing on your computer for an attacker to connect to.
+- **Ingest is locked down.** `POST /ingest` requires a secret token, enforces strict schema validation (types, ranges, event-type whitelist), caps batch size (100 events) and body size (256 KB), and skips anything malformed instead of erroring.
+- **The public endpoint is read-only aggregate data.** `GET /svg` runs fixed, parameterized SQL over anonymous aggregates. The `user` parameter is only ever *compared* against your configured username — never used in a query or a fetch.
+- **Rendering is injection-safe.** Every dynamic string (badge labels, repo names, notes) is XML-escaped before entering the SVG; the SVG contains no scripts.
+- **Secrets never touch git.** The token lives in Wrangler's secret store + your env; `.dev.vars` is gitignored.
+
+## Data honesty
+
+Full disclosure: like every self-hosted stats card, the data is **self-reported** from the owner's machine — absolute proof is impossible without a trusted third party. What devcard does about it:
+
+- **Plausibility enforcement at ingest**: single events claiming absurd line counts, timestamps outside a sane window, or unknown event types are rejected server-side. Gross inflation requires sustained, visible effort rather than one fake request.
+- **Provenance on the card**: the "tracking since <date> · N events" line shows how long and how much has actually been measured — a fresh account claiming huge numbers is visibly suspicious.
+- **Roadmap**: device-key signed batches (tamper-evidence for the sync channel) and public per-day aggregate endpoints so anyone can inspect a card's history for anomalies.
+
+This is also why the levels/XP system isn't rendered yet — gamified numbers deserve stronger guarantees before they're comparable between people.
 
 ## Known limits (v1)
 
