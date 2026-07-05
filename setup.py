@@ -112,12 +112,10 @@ def main():
         die(f"secret put failed:\n{put.stderr}")
     with open(os.path.join(WORKER_DIR, ".dev.vars"), "w", encoding="utf-8") as f:
         f.write(f"INGEST_TOKEN={token}")
-    if os.name == "nt":
-        run(["setx", "DEVCARD_INGEST_TOKEN", token])
-        print("  stored (wrangler secret + DEVCARD_INGEST_TOKEN user env var)")
-    else:
-        print("  stored as wrangler secret. Add this line to your shell profile:")
-        print(f'    export DEVCARD_INGEST_TOKEN="{token}"')
+    os.makedirs(DEVCARD_HOME, exist_ok=True)
+    with open(os.path.join(DEVCARD_HOME, "token"), "w", encoding="utf-8") as f:
+        f.write(token)
+    print("  stored (wrangler secret + ~/.claude/devcard/token — hooks read the file directly)")
 
     # 6. deploy ------------------------------------------------------------
     step(6, "Deploying the Worker...")
