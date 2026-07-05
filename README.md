@@ -153,6 +153,27 @@ Restart Claude Code, write some code, and open `https://<your-worker-url>/svg?us
 
 For your GitHub profile: create a repo named exactly like your username, and paste that line into its README.
 
+## Layouts & themes
+
+Mix and match with query params — every combination is a valid embed:
+
+```html
+<img src="https://<your-worker-url>/svg?user=<you>&layout=banner&theme=terminal" alt="devcard" />
+```
+
+**Layouts** (`?layout=`):
+
+| Value | Size | What you get |
+|---|---|---|
+| `full` (default) | 480×tall | Everything: avatar, streak flame, language bar + legend, 16-week contribution heatmap, pinned repos, stats, badges |
+| `banner` | 480×72 | One-line strip: avatar, @user, lines, streak, mini language bar — for forum sigs and tight READMEs |
+| `half` | 480×152 | Header + lines + language bar + stats row |
+| `vertical` | 280×~290 | Narrow column for site/blog sidebars |
+
+**Themes** (`?theme=`): `default` (follows the viewer's light/dark system theme) · `dark` · `light` · `gentle` (soft rosé/lilac) · `cyberpunk` (neon noir) · `terminal` (green-phosphor CRT).
+
+The heatmap paints real per-day output (intensity relative to your own p90, so one huge day doesn't flatten the rest), the flame lights up at a 7+ day streak, and the footer shows "updated Xmin ago" — a live card that can prove it's live. Day boundaries use the `TIMEZONE` var in `wrangler.toml`.
+
 ## Badges, certifications, awards
 
 Manual, self-declared entries rendered as pills with icons (star = badge, seal = certification, trophy = award):
@@ -226,10 +247,10 @@ This is also why the levels/XP system isn't rendered yet — gamified numbers de
 
 ## Roadmap
 
-- Levels & XP (balanced + abuse-resistant), streak mechanics
-- More locales, themes, layout variants
+- Levels & XP (balanced + abuse-resistant)
+- More locales and community themes (PRs welcome — a theme is ~20 lines of tokens in `worker/src/themes.ts`)
 - Multi-user hosted mode, profile comparison
-- Support for more AI coding agents
+- Device-key signed batches (tamper-evident sync)
 
 ---
 

@@ -1,7 +1,13 @@
+import { loadCardData } from "./queries";
+import { pickTheme } from "./themes";
+import { renderFull, Strings } from "./render";
+import { renderBanner, renderHalf, renderVertical } from "./render-layouts";
+
 export interface Env {
   DB: D1Database;
   INGEST_TOKEN: string;
   GITHUB_USERNAME: string;
+  TIMEZONE?: string;
 }
 
 interface IngestEvent {
@@ -13,28 +19,6 @@ interface IngestEvent {
   bytes_added?: number;
   event_type: string;
 }
-
-const LANGUAGE_COLORS: Record<string, string> = {
-  Python: "#3572A5",
-  JavaScript: "#f1e05a",
-  TypeScript: "#3178c6",
-  HTML: "#e34c26",
-  CSS: "#563d7c",
-  Rust: "#dea584",
-  PowerShell: "#012456",
-  SQL: "#336790",
-  Markdown: "#083fa1",
-  JSON: "#292929",
-  YAML: "#cb171e",
-  TOML: "#9c4221",
-  Shell: "#89e051",
-  Go: "#00add8",
-  Java: "#b07219",
-  C: "#555555",
-  "C++": "#f34b7d",
-  Ruby: "#701516",
-  PHP: "#4f5d95",
-};
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -145,21 +129,46 @@ async function handleIngest(request: Request, env: Env): Promise<Response> {
   return Response.json({ inserted: valid.length, skipped });
 }
 
-interface Strings {
-  lines: string;
-  activeDays: string;
-  edits: string;
-  commits: string;
-  repos: string;
-  since: string;
-  events: string;
-  dec: string;
-}
-
 const STRINGS: Record<string, Strings> = {
-  en: { lines: "lines of code", activeDays: "active days (30d)", edits: "code edits", commits: "commits", repos: "repos", since: "tracking since", events: "events", dec: "." },
-  pt: { lines: "linhas de código", activeDays: "dias ativos (30d)", edits: "edições de código", commits: "commits", repos: "repos", since: "medindo desde", events: "eventos", dec: "," },
-  es: { lines: "líneas de código", activeDays: "días activos (30d)", edits: "ediciones de código", commits: "commits", repos: "repos", since: "midiendo desde", events: "eventos", dec: "," },
+  en: {
+    lines: "lines of code",
+    edits: "code edits",
+    commits: "commits",
+    repos: "repos",
+    since: "tracking since",
+    events: "events",
+    dayStreak: "day streak",
+    streakAbbr: "d",
+    updatedAgo: "updated {X} ago",
+    dec: ".",
+    locale: "en",
+  },
+  pt: {
+    lines: "linhas de código",
+    edits: "edições de código",
+    commits: "commits",
+    repos: "repos",
+    since: "medindo desde",
+    events: "eventos",
+    dayStreak: "dias seguidos",
+    streakAbbr: "d",
+    updatedAgo: "atualizado há {X}",
+    dec: ",",
+    locale: "pt",
+  },
+  es: {
+    lines: "líneas de código",
+    edits: "ediciones de código",
+    commits: "commits",
+    repos: "repos",
+    since: "midiendo desde",
+    events: "eventos",
+    dayStreak: "días seguidos",
+    streakAbbr: "d",
+    updatedAgo: "actualizado hace {X}",
+    dec: ",",
+    locale: "es",
+  },
 };
 
 function pickLang(request: Request, url: URL): Strings {
@@ -173,76 +182,7 @@ function pickLang(request: Request, url: URL): Strings {
   return STRINGS.en;
 }
 
-async function fetchAvatarDataUri(user: string): Promise<string | null> {
-  const url = `https://github.com/${user}.png?size=96`;
-  const cache = caches.default;
-  const cacheKey = new Request(url);
-  let resp = await cache.match(cacheKey);
-  if (!resp) {
-    try {
-      resp = await fetch(url, { redirect: "follow" });
-      if (!resp.ok) return null;
-      resp = new Response(resp.body, resp);
-      resp.headers.set("Cache-Control", "public, max-age=86400");
-      await cache.put(cacheKey, resp.clone());
-    } catch {
-      return null;
-    }
-  }
-  const buf = new Uint8Array(await resp.arrayBuffer());
-  let binary = "";
-  for (let i = 0; i < buf.length; i += 8192) {
-    binary += String.fromCharCode(...buf.subarray(i, i + 8192));
-  }
-  const ct = resp.headers.get("Content-Type") ?? "image/png";
-  return `data:${ct};base64,${btoa(binary)}`;
-}
-
-async function hasSponsors(user: string): Promise<boolean> {
-  const url = `https://github.com/sponsors/${user}`;
-  const cache = caches.default;
-  const cacheKey = new Request(url + "#devcard-check");
-  const hit = await cache.match(cacheKey);
-  if (hit) return (await hit.text()) === "1";
-  let active = false;
-  try {
-    const resp = await fetch(url, { method: "HEAD", redirect: "manual" });
-    active = resp.status === 200;
-  } catch {
-    active = false;
-  }
-  await cache.put(
-    cacheKey,
-    new Response(active ? "1" : "0", { headers: { "Cache-Control": "public, max-age=86400" } })
-  );
-  return active;
-}
-
-async function fetchStars(user: string, repo: string): Promise<number | null> {
-  const url = `https://api.github.com/repos/${user}/${repo}`;
-  const cache = caches.default;
-  const cacheKey = new Request(url + "#devcard-stars");
-  const hit = await cache.match(cacheKey);
-  if (hit) {
-    const v = await hit.text();
-    return v === "" ? null : Number(v);
-  }
-  let stars: number | null = null;
-  try {
-    const resp = await fetch(url, { headers: { "User-Agent": "devcard/1.0", "Accept": "application/vnd.github+json" } });
-    if (resp.ok) {
-      const data = (await resp.json()) as { stargazers_count?: number };
-      if (typeof data.stargazers_count === "number") stars = data.stargazers_count;
-    }
-  } catch {
-    stars = null;
-  }
-  await cache.put(
-    cacheKey,
-    new Response(stars === null ? "" : String(stars), { headers: { "Cache-Control": "public, max-age=86400" } })
-  );
-  return stars;
-}
+const LAYOUTS = new Set(["full", "banner", "half", "vertical"]);
 
 async function handleSvg(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
@@ -251,80 +191,17 @@ async function handleSvg(request: Request, env: Env): Promise<Response> {
     return new Response("unknown user", { status: 404 });
   }
   const t = pickLang(request, url);
-  const [avatar, sponsorable] = await Promise.all([
-    fetchAvatarDataUri(env.GITHUB_USERNAME),
-    hasSponsors(env.GITHUB_USERNAME),
-  ]);
+  const theme = pickTheme(url.searchParams.get("theme"));
+  const layoutParam = url.searchParams.get("layout") ?? "full";
+  const layout = LAYOUTS.has(layoutParam) ? layoutParam : "full";
 
-  const langRows = await env.DB.prepare(
-    "SELECT language, SUM(lines_added) as total FROM events WHERE language IS NOT NULL GROUP BY language ORDER BY total DESC"
-  ).all();
+  const data = await loadCardData(env, t.locale);
 
-  const bytesRow = await env.DB.prepare("SELECT SUM(bytes_added) as b FROM events").first();
-
-  const streakRow = await env.DB.prepare(
-    "SELECT COUNT(DISTINCT date(ts, 'unixepoch')) as days FROM events WHERE ts >= ?"
-  )
-    .bind(Math.floor(Date.now() / 1000) - 30 * 86400)
-    .first();
-
-  const eventTypeRows = await env.DB.prepare("SELECT event_type, COUNT(*) as n FROM events GROUP BY event_type").all();
-
-  const snapshot = await env.DB.prepare("SELECT repo_count FROM stats_snapshot WHERE id = 1").first();
-
-  const profileRows = await env.DB.prepare(
-    "SELECT kind, label FROM profile_entries ORDER BY created_at DESC LIMIT 8"
-  ).all();
-
-  const pinRows = await env.DB.prepare(
-    "SELECT repo, note FROM pinned_repos ORDER BY position ASC, id ASC LIMIT 3"
-  ).all();
-
-  const firstRow = await env.DB.prepare("SELECT MIN(ts) as first_ts, COUNT(*) as n FROM events").first();
-
-  const languages = (langRows.results as { language: string; total: number }[]) ?? [];
-  const totalLines = languages.reduce((sum, l) => sum + l.total, 0);
-  const repoCount = (snapshot as { repo_count: number } | null)?.repo_count ?? 0;
-  const activeDays = (streakRow as { days: number } | null)?.days ?? 0;
-  const badges = (profileRows.results as { kind: string; label: string }[]) ?? [];
-
-  const eventCounts = (eventTypeRows.results as { event_type: string; n: number }[]) ?? [];
-  const totalCommits = eventCounts.find((r) => r.event_type === "commit")?.n ?? 0;
-  const totalActions = eventCounts
-    .filter((r) => r.event_type === "edit" || r.event_type === "write")
-    .reduce((sum, r) => sum + r.n, 0);
-
-  const rawPins = (pinRows.results as { repo: string; note: string | null }[]) ?? [];
-  const pins = await Promise.all(
-    rawPins.map(async (p) => ({
-      repo: p.repo,
-      note: p.note,
-      stars: await fetchStars(env.GITHUB_USERNAME, p.repo),
-    }))
-  );
-
-  const provenance = firstRow as { first_ts: number | null; n: number } | null;
-  const firstTs = provenance?.first_ts ?? null;
-  const totalEvents = provenance?.n ?? 0;
-  const totalBytes = (bytesRow as { b: number | null } | null)?.b ?? 0;
-
-  const svg = renderCard({
-    languages,
-    totalLines,
-    repoCount,
-    activeDays,
-    badges,
-    totalCommits,
-    totalActions,
-    githubUser: env.GITHUB_USERNAME,
-    t,
-    avatar,
-    sponsorable,
-    pins,
-    firstTs,
-    totalEvents,
-    totalBytes,
-  });
+  let svg: string;
+  if (layout === "banner") svg = renderBanner(data, theme, t);
+  else if (layout === "half") svg = renderHalf(data, theme, t);
+  else if (layout === "vertical") svg = renderVertical(data, theme, t);
+  else svg = renderFull(data, theme, t);
 
   return new Response(svg, {
     headers: {
@@ -333,254 +210,4 @@ async function handleSvg(request: Request, env: Env): Promise<Response> {
       "Vary": "Accept-Language",
     },
   });
-}
-
-const KIND_ICONS: Record<string, string> = {
-  badge: "M0,-6 L1.8,-1.9 6,-1.9 2.7,0.9 3.7,5 0,2.4 -3.7,5 -2.7,0.9 -6,-1.9 -1.8,-1.9 Z",
-  certification: "M0,-5.5 A5.5,5.5 0 1 0 0.01,-5.5 Z M-2.6,-0.2 L-0.7,1.8 L2.8,-2 L1.8,-3 L-0.7,-0.3 L-1.6,-1.2 Z",
-  award:
-    "M-4.5,-6 h9 v2.5 a4.5,4.5 0 0 1 -3.2,4.3 L1,3 h2 v2 h-6 v-2 h2 l-0.3,-2.2 A4.5,4.5 0 0 1 -4.5,-3.5 Z",
-};
-const HEART_ICON =
-  "M0,4 C-4.6,0.6 -4.6,-3.4 -1.7,-3.4 C-0.6,-3.4 0,-2.5 0,-2.5 C0,-2.5 0.6,-3.4 1.7,-3.4 C4.6,-3.4 4.6,0.6 0,4 Z";
-
-// 12,837 → "12,837" · 171,340 → "171k" · 2,610,000 → "2.6m" (decimal separator per locale)
-function fmtCount(n: number, dec: string): string {
-  if (n < 100000) return n.toLocaleString("en-US");
-  const units: [number, string][] = [
-    [1e12, "t"],
-    [1e9, "b"],
-    [1e6, "m"],
-    [1e3, "k"],
-  ];
-  for (const [size, suffix] of units) {
-    if (n >= size) {
-      const v = n / size;
-      const text = v < 10 ? v.toFixed(1).replace(".", dec) : String(Math.round(v));
-      return text + suffix;
-    }
-  }
-  return String(n);
-}
-
-function fmtBytes(n: number, dec: string): string {
-  const units: [number, string][] = [
-    [1e12, "tb"],
-    [1e9, "gb"],
-    [1e6, "mb"],
-    [1e3, "kb"],
-  ];
-  for (const [size, suffix] of units) {
-    if (n >= size) {
-      const v = n / size;
-      const text = v < 10 ? v.toFixed(1).replace(".", dec) : String(Math.round(v));
-      return text + suffix;
-    }
-  }
-  return `${n}b`;
-}
-
-function renderCard(data: {
-  languages: { language: string; total: number }[];
-  totalLines: number;
-  repoCount: number;
-  activeDays: number;
-  badges: { kind: string; label: string }[];
-  totalCommits: number;
-  totalActions: number;
-  githubUser: string;
-  t: Strings;
-  avatar: string | null;
-  sponsorable: boolean;
-  pins: { repo: string; note: string | null; stars: number | null }[];
-  firstTs: number | null;
-  totalEvents: number;
-  totalBytes: number;
-}): string {
-  const W = 480;
-  const PAD = 24;
-  const t = data.t;
-  const mono = 'font-family="ui-monospace,SFMono-Regular,Consolas,monospace"';
-  const sans = `font-family="-apple-system,'Segoe UI',Roboto,'Helvetica Neue',sans-serif"`;
-
-  // -- header: avatar + wordmark --
-  const avatarSvg = data.avatar
-    ? `<clipPath id="av"><circle cx="42" cy="36" r="17"/></clipPath>
-  <image href="${data.avatar}" x="25" y="19" width="34" height="34" clip-path="url(#av)" preserveAspectRatio="xMidYMid slice"/>
-  <circle class="avbrd" cx="42" cy="36" r="17" fill="none" stroke-width="1.5"/>`
-    : `<circle class="pill" cx="42" cy="36" r="17"/><text class="mut" x="42" y="41" ${sans} font-size="14" text-anchor="middle">${escapeXml(data.githubUser.charAt(0).toUpperCase())}</text>`;
-  const headX = 68;
-
-  // -- bar --
-  const barY = 130;
-  const barH = 12;
-  const barW = W - PAD * 2;
-  let x = PAD;
-  const segs: string[] = [];
-  const seps: string[] = [];
-  for (const lang of data.languages) {
-    const w = data.totalLines > 0 ? (lang.total / data.totalLines) * barW : 0;
-    const color = LANGUAGE_COLORS[lang.language] ?? "#8b93a3";
-    segs.push(
-      `<rect x="${x.toFixed(2)}" y="${barY}" width="${w.toFixed(2)}" height="${barH}" fill="${color}"><title>${escapeXml(lang.language)}</title></rect>`
-    );
-    x += w;
-    if (x < PAD + barW - 1) seps.push(`<rect class="sep" x="${(x - 1).toFixed(2)}" y="${barY}" width="2" height="${barH}"/>`);
-  }
-
-  // -- legend: 2 columns x 3 rows --
-  const legendTop = 172;
-  const rowH = 21;
-  const colX = [PAD, PAD + barW / 2 + 8];
-  const legend = data.languages
-    .slice(0, 6)
-    .map((lang, i) => {
-      const pct = data.totalLines > 0 ? ((lang.total / data.totalLines) * 100).toFixed(1) : "0.0";
-      const cx = colX[Math.floor(i / 3)];
-      const y = legendTop + (i % 3) * rowH;
-      const color = LANGUAGE_COLORS[lang.language] ?? "#8b93a3";
-      return (
-        `<circle cx="${cx + 5}" cy="${y - 4}" r="4.5" fill="${color}"/>` +
-        `<text class="txt" x="${cx + 17}" y="${y}" ${sans} font-size="12.5">${escapeXml(lang.language)}` +
-        `<tspan class="mut" ${mono} font-size="11.5"> ${pct}%</tspan></text>`
-      );
-    })
-    .join("\n  ");
-
-  const legendBottom = data.languages.length === 0 ? legendTop : legendTop + (Math.min(data.languages.length, 3) - 1) * rowH;
-
-  // -- pinned repos: up to 3 linked boxes --
-  const truncate = (s: string, max: number) => (s.length > max ? s.slice(0, max - 1) + "…" : s);
-  let pinnedSvg = "";
-  let pinnedBottom = legendBottom;
-  if (data.pins.length > 0) {
-    const pinTop = legendBottom + 16;
-    const boxH = 42;
-    const gap = 10;
-    const boxW = (barW - gap * (data.pins.length - 1)) / data.pins.length;
-    pinnedSvg = data.pins
-      .map((p, i) => {
-        const bx = PAD + i * (boxW + gap);
-        const starTxt = p.stars !== null ? `★ ${p.stars}` : "";
-        const noteTxt = truncate(p.note ?? "", Math.floor(boxW / 6.2) - (starTxt ? starTxt.length + 2 : 0));
-        const sub = [starTxt, noteTxt].filter(Boolean).join("  ");
-        return (
-          `<a href="https://github.com/${escapeXml(data.githubUser)}/${escapeXml(p.repo)}" target="_blank">` +
-          `<rect class="pill" x="${bx.toFixed(1)}" y="${pinTop}" width="${boxW.toFixed(1)}" height="${boxH}" rx="8"/>` +
-          `<path class="mut" d="M0,-5 h7 a2,2 0 0 1 2,2 v8 h-9 a2,2 0 0 0 -2,2 v-10 a2,2 0 0 1 2,-2 Z M-2,7 h11 v3 h-9 a2,2 0 0 1 -2,-2 Z" transform="translate(${(bx + 14).toFixed(1)},${pinTop + 16}) scale(0.9)"/>` +
-          `<text class="txt" x="${(bx + 28).toFixed(1)}" y="${pinTop + 18}" ${sans} font-size="12" font-weight="700">${escapeXml(truncate(p.repo, Math.floor(boxW / 7.5)))}</text>` +
-          `<text class="mut" x="${(bx + 10).toFixed(1)}" y="${pinTop + 33}" ${sans} font-size="10.5">${escapeXml(sub)}</text>` +
-          `</a>`
-        );
-      })
-      .join("\n  ");
-    pinnedBottom = pinTop + boxH;
-  }
-
-  // -- footer stats --
-  const divY = pinnedBottom + 16;
-  const footY = divY + 26;
-  const stat = (xPos: number, n: string, label: string) =>
-    `<text x="${xPos}" y="${footY}" font-size="12"><tspan class="txt" ${mono} font-weight="700">${n}</tspan><tspan class="mut" ${sans}> ${escapeXml(label)}</tspan></text>`;
-  const footer =
-    stat(PAD, String(data.totalActions), t.edits) +
-    stat(PAD + 176, String(data.totalCommits), t.commits) +
-    stat(PAD + 322, String(data.activeDays), t.activeDays);
-
-  // -- provenance: honest signal of how long/how much has been measured --
-  const sinceDate = data.firstTs
-    ? new Date(data.firstTs * 1000).toISOString().slice(0, 10)
-    : null;
-  const provenanceLine = sinceDate
-    ? `<text class="faint" x="${W - PAD}" y="${footY + 18}" ${mono} font-size="9.5" text-anchor="end">${escapeXml(t.since)} ${sinceDate} · ${data.totalEvents.toLocaleString("en-US")} ${escapeXml(t.events)}</text>`
-    : "";
-
-  // -- pills: sponsor first (if active), then badges with kind icons --
-  const pillTop = footY + 26;
-  let pillX = PAD;
-  let pillRow = 0;
-  const pillParts: string[] = [];
-
-  const addPill = (label: string, iconPath: string | null, opts?: { cls?: string; iconCls?: string; href?: string }) => {
-    const iconSpace = iconPath ? 16 : 0;
-    const w = Math.round(label.length * 6.2) + 20 + iconSpace;
-    if (pillX + w > W - PAD) {
-      pillRow += 1;
-      pillX = PAD;
-    }
-    const y = pillTop + pillRow * 28;
-    const icon = iconPath
-      ? `<path class="${opts?.iconCls ?? "mut"}" d="${iconPath}" transform="translate(${pillX + 14},${y + 10.5}) scale(0.95)"/>`
-      : "";
-    let pill =
-      `<rect class="${opts?.cls ?? "pill"}" x="${pillX}" y="${y}" width="${w}" height="21" rx="10.5"/>` +
-      icon +
-      `<text class="mut" x="${pillX + 10 + iconSpace}" y="${y + 14.5}" ${sans} font-size="11">${escapeXml(label)}</text>`;
-    if (opts?.href) pill = `<a href="${opts.href}" target="_blank">${pill}</a>`;
-    pillParts.push(pill);
-    pillX += w + 8;
-  };
-
-  if (data.sponsorable) {
-    addPill("Sponsor", HEART_ICON, {
-      cls: "pill-sp",
-      iconCls: "heart",
-      href: `https://github.com/sponsors/${escapeXml(data.githubUser)}`,
-    });
-  }
-  for (const b of data.badges) {
-    addPill(b.label, KIND_ICONS[b.kind] ?? KIND_ICONS.badge);
-  }
-  const pills = pillParts.join("\n  ");
-  const pillRowsUsed = pillParts.length > 0 ? pillRow + 1 : 0;
-
-  const H = pillTop + (pillRowsUsed > 0 ? pillRowsUsed * 28 : 0) + 4;
-
-  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="devcard ${escapeXml(data.githubUser)}">
-  <style>
-    .bg{fill:#ffffff}.brd{stroke:#d8dce4}.txt{fill:#1b1f27}.mut{fill:#6b7280}.faint{fill:#9aa1ac}
-    .track{fill:#edeff4}.sep{fill:#ffffff}
-    .pill{fill:#f2f4f8;stroke:#d8dce4}.pill-sp{fill:#fff0f3;stroke:#f1b8c4}.heart{fill:#d1355f}
-    .link{fill:#0969da}.avbrd{stroke:#d8dce4}
-    @media(prefers-color-scheme:dark){
-      .bg{fill:#0f1117}.brd{stroke:#262b38}.txt{fill:#e6e9f0}.mut{fill:#8b93a3}.faint{fill:#5b6270}
-      .track{fill:#1e2230}.sep{fill:#0f1117}
-      .pill{fill:#171a24;stroke:#262b38}.pill-sp{fill:#2a1620;stroke:#6e2a3d}.heart{fill:#f47892}
-      .link{fill:#58a6ff}.avbrd{stroke:#262b38}
-    }
-  </style>
-  <rect class="bg brd" x="0.5" y="0.5" width="${W - 1}" height="${H - 1}" rx="14" stroke-width="1"/>
-
-  ${avatarSvg}
-  <text class="txt" x="${headX}" y="32" ${sans} font-size="15" font-weight="700">devcard</text>
-  <text class="mut" x="${headX}" y="48" ${mono} font-size="12">@${escapeXml(data.githubUser)}</text>
-  <circle cx="${headX + 66}" cy="27.5" r="4" fill="#3fb950">
-    <animate attributeName="opacity" values="1;0.35;1" dur="2.4s" repeatCount="indefinite"/>
-  </circle>
-  <a href="https://github.com/${escapeXml(data.githubUser)}?tab=repositories" target="_blank">
-    <text class="link" x="${W - PAD}" y="36" ${mono} font-size="12" text-anchor="end">${data.repoCount} ${escapeXml(t.repos)} →</text>
-  </a>
-
-  <text class="txt" x="${PAD}" y="106" ${mono} font-size="30" font-weight="700">${fmtCount(data.totalLines, t.dec)}<tspan class="mut" ${sans} font-size="12" font-weight="400"> ${escapeXml(t.lines)}</tspan><tspan class="faint" ${mono} font-size="11" font-weight="400"> (${fmtBytes(data.totalBytes, t.dec)})</tspan></text>
-
-  <clipPath id="barclip"><rect x="${PAD}" y="${barY}" width="${barW}" height="${barH}" rx="6"/></clipPath>
-  <rect class="track" x="${PAD}" y="${barY}" width="${barW}" height="${barH}" rx="6"/>
-  <g clip-path="url(#barclip)">
-    ${segs.join("\n    ")}
-    ${seps.join("\n    ")}
-  </g>
-
-  ${legend}
-
-  ${pinnedSvg}
-
-  <line class="brd" x1="${PAD}" y1="${divY}" x2="${W - PAD}" y2="${divY}" stroke-width="1"/>
-  ${footer}
-  ${provenanceLine}
-  ${pills}
-</svg>`;
-}
-
-function escapeXml(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
