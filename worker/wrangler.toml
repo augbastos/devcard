@@ -9,3 +9,4 @@ database_id = "6cfd7bbe-6ace-4f91-8c8d-97b333b16f66"
 
 [vars]
 GITHUB_USERNAME = "augbastos"
+TIMEZONE = "Europe/Dublin"
