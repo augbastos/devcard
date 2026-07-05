@@ -7,8 +7,24 @@ import urllib.request
 
 DB_PATH = os.path.normpath(os.path.expanduser("~/.claude/devcard/events.db"))
 ERROR_LOG_PATH = os.path.normpath(os.path.expanduser("~/.claude/devcard/errors.log"))
+TOKEN_PATH = os.path.normpath(os.path.expanduser("~/.claude/devcard/token"))
 WORKER_INGEST_URL = "https://card.devcard.workers.dev/ingest"
-INGEST_TOKEN = os.environ.get("DEVCARD_INGEST_TOKEN", "")
+
+
+def _load_token():
+    """Env var wins; else the token file. The file means every hook process
+    finds the token regardless of when its parent session started."""
+    env = os.environ.get("DEVCARD_INGEST_TOKEN", "")
+    if env:
+        return env
+    try:
+        with open(TOKEN_PATH, encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+INGEST_TOKEN = _load_token()
 
 EXT_LANGUAGE = {
     ".py": "Python", ".js": "JavaScript", ".jsx": "JavaScript", ".mjs": "JavaScript", ".cjs": "JavaScript",
@@ -49,7 +65,7 @@ def parse_event(payload):
         content = tool_input.get("content", "")
         return {
             "ts": now, "language": language, "lines_added": count_lines(content),
-            "lines_removed": 0, "bytes_added": len(content.encode("utf-8")),
+            "lines_removed": 0, "bytes_added": len(content.encode("utf-8", errors="replace")),
             "event_type": "write", "project_key": cwd,
         }
 
@@ -62,7 +78,7 @@ def parse_event(payload):
         new_string = tool_input.get("new_string", "")
         return {
             "ts": now, "language": language, "lines_added": count_lines(new_string),
-            "lines_removed": count_lines(old_string), "bytes_added": len(new_string.encode("utf-8")),
+            "lines_removed": count_lines(old_string), "bytes_added": len(new_string.encode("utf-8", errors="replace")),
             "event_type": "edit", "project_key": cwd,
         }
 
@@ -167,7 +183,7 @@ def log_error(message, path=ERROR_LOG_PATH):
 def send_to_worker(events, repo_count_value, url=WORKER_INGEST_URL, token=None, timeout=1.5):
     """POST a batch of events plus the current repo count to the Worker. Returns True on success."""
     token = token if token is not None else INGEST_TOKEN
-    body = json.dumps({"events": events, "repo_count": repo_count_value}).encode("utf-8")
+    body = json.dumps({"events": events, "repo_count": repo_count_value}).encode("utf-8", errors="replace")
     req = urllib.request.Request(
         url, data=body,
         headers={
