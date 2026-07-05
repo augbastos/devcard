@@ -10,6 +10,7 @@ interface IngestEvent {
   language: string | null;
   lines_added: number;
   lines_removed: number;
+  bytes_added?: number;
   event_type: string;
 }
 
@@ -56,6 +57,7 @@ export default {
 const MAX_BATCH = 100;
 const MAX_BODY_BYTES = 262144; // 256 KB
 const MAX_LINES_PER_EVENT = 20000;
+const MAX_BYTES_PER_EVENT = 10485760; // 10 MB — far beyond any plausible single edit
 const MAX_REPO_COUNT = 10000;
 const EVENT_TYPES = new Set(["edit", "write", "commit"]);
 
@@ -74,12 +76,15 @@ function sanitizeEvent(e: unknown): IngestEvent | null {
   if (typeof lr !== "number" || !Number.isInteger(lr) || lr < 0 || lr > MAX_LINES_PER_EVENT) return null;
   const id = ev.id;
   if (id !== undefined && (typeof id !== "number" || !Number.isInteger(id) || id < 0)) return null;
+  const ba = ev.bytes_added ?? 0;
+  if (typeof ba !== "number" || !Number.isInteger(ba) || ba < 0 || ba > MAX_BYTES_PER_EVENT) return null;
   return {
     id: id as number | undefined,
     ts: Math.floor(ts),
     language: (language as string | null | undefined) ?? null,
     lines_added: la,
     lines_removed: lr,
+    bytes_added: ba,
     event_type: eventType,
   };
 }
@@ -119,8 +124,8 @@ async function handleIngest(request: Request, env: Env): Promise<Response> {
 
   const statements = valid.map((e) =>
     env.DB.prepare(
-      "INSERT OR IGNORE INTO events (ts, language, lines_added, lines_removed, event_type, client_event_id) VALUES (?, ?, ?, ?, ?, ?)"
-    ).bind(e.ts, e.language, e.lines_added, e.lines_removed, e.event_type, e.id ?? null)
+      "INSERT OR IGNORE INTO events (ts, language, lines_added, lines_removed, bytes_added, event_type, client_event_id) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    ).bind(e.ts, e.language, e.lines_added, e.lines_removed, e.bytes_added ?? 0, e.event_type, e.id ?? null)
   );
 
   const rc = body.repo_count;
@@ -148,12 +153,13 @@ interface Strings {
   repos: string;
   since: string;
   events: string;
+  dec: string;
 }
 
 const STRINGS: Record<string, Strings> = {
-  en: { lines: "lines of code", activeDays: "active days (30d)", edits: "code edits", commits: "commits", repos: "repos", since: "tracking since", events: "events" },
-  pt: { lines: "linhas de código", activeDays: "dias ativos (30d)", edits: "edições de código", commits: "commits", repos: "repos", since: "medindo desde", events: "eventos" },
-  es: { lines: "líneas de código", activeDays: "días activos (30d)", edits: "ediciones de código", commits: "commits", repos: "repos", since: "midiendo desde", events: "eventos" },
+  en: { lines: "lines of code", activeDays: "active days (30d)", edits: "code edits", commits: "commits", repos: "repos", since: "tracking since", events: "events", dec: "." },
+  pt: { lines: "linhas de código", activeDays: "dias ativos (30d)", edits: "edições de código", commits: "commits", repos: "repos", since: "medindo desde", events: "eventos", dec: "," },
+  es: { lines: "líneas de código", activeDays: "días activos (30d)", edits: "ediciones de código", commits: "commits", repos: "repos", since: "midiendo desde", events: "eventos", dec: "," },
 };
 
 function pickLang(request: Request, url: URL): Strings {
@@ -254,6 +260,8 @@ async function handleSvg(request: Request, env: Env): Promise<Response> {
     "SELECT language, SUM(lines_added) as total FROM events WHERE language IS NOT NULL GROUP BY language ORDER BY total DESC"
   ).all();
 
+  const bytesRow = await env.DB.prepare("SELECT SUM(bytes_added) as b FROM events").first();
+
   const streakRow = await env.DB.prepare(
     "SELECT COUNT(DISTINCT date(ts, 'unixepoch')) as days FROM events WHERE ts >= ?"
   )
@@ -298,6 +306,7 @@ async function handleSvg(request: Request, env: Env): Promise<Response> {
   const provenance = firstRow as { first_ts: number | null; n: number } | null;
   const firstTs = provenance?.first_ts ?? null;
   const totalEvents = provenance?.n ?? 0;
+  const totalBytes = (bytesRow as { b: number | null } | null)?.b ?? 0;
 
   const svg = renderCard({
     languages,
@@ -314,6 +323,7 @@ async function handleSvg(request: Request, env: Env): Promise<Response> {
     pins,
     firstTs,
     totalEvents,
+    totalBytes,
   });
 
   return new Response(svg, {
@@ -334,6 +344,42 @@ const KIND_ICONS: Record<string, string> = {
 const HEART_ICON =
   "M0,4 C-4.6,0.6 -4.6,-3.4 -1.7,-3.4 C-0.6,-3.4 0,-2.5 0,-2.5 C0,-2.5 0.6,-3.4 1.7,-3.4 C4.6,-3.4 4.6,0.6 0,4 Z";
 
+// 12,837 → "12,837" · 171,340 → "171k" · 2,610,000 → "2.6m" (decimal separator per locale)
+function fmtCount(n: number, dec: string): string {
+  if (n < 100000) return n.toLocaleString("en-US");
+  const units: [number, string][] = [
+    [1e12, "t"],
+    [1e9, "b"],
+    [1e6, "m"],
+    [1e3, "k"],
+  ];
+  for (const [size, suffix] of units) {
+    if (n >= size) {
+      const v = n / size;
+      const text = v < 10 ? v.toFixed(1).replace(".", dec) : String(Math.round(v));
+      return text + suffix;
+    }
+  }
+  return String(n);
+}
+
+function fmtBytes(n: number, dec: string): string {
+  const units: [number, string][] = [
+    [1e12, "tb"],
+    [1e9, "gb"],
+    [1e6, "mb"],
+    [1e3, "kb"],
+  ];
+  for (const [size, suffix] of units) {
+    if (n >= size) {
+      const v = n / size;
+      const text = v < 10 ? v.toFixed(1).replace(".", dec) : String(Math.round(v));
+      return text + suffix;
+    }
+  }
+  return `${n}b`;
+}
+
 function renderCard(data: {
   languages: { language: string; total: number }[];
   totalLines: number;
@@ -349,6 +395,7 @@ function renderCard(data: {
   pins: { repo: string; note: string | null; stars: number | null }[];
   firstTs: number | null;
   totalEvents: number;
+  totalBytes: number;
 }): string {
   const W = 480;
   const PAD = 24;
@@ -514,7 +561,7 @@ function renderCard(data: {
     <text class="link" x="${W - PAD}" y="36" ${mono} font-size="12" text-anchor="end">${data.repoCount} ${escapeXml(t.repos)} →</text>
   </a>
 
-  <text class="txt" x="${PAD}" y="106" ${mono} font-size="30" font-weight="700">${data.totalLines.toLocaleString("en-US")}<tspan class="mut" ${sans} font-size="12" font-weight="400"> ${escapeXml(t.lines)}</tspan></text>
+  <text class="txt" x="${PAD}" y="106" ${mono} font-size="30" font-weight="700">${fmtCount(data.totalLines, t.dec)}<tspan class="mut" ${sans} font-size="12" font-weight="400"> ${escapeXml(t.lines)}</tspan><tspan class="faint" ${mono} font-size="11" font-weight="400"> (${fmtBytes(data.totalBytes, t.dec)})</tspan></text>
 
   <clipPath id="barclip"><rect x="${PAD}" y="${barY}" width="${barW}" height="${barH}" rx="6"/></clipPath>
   <rect class="track" x="${PAD}" y="${barY}" width="${barW}" height="${barH}" rx="6"/>

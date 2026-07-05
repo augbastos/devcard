@@ -37,9 +37,33 @@ Claude Code session                     your Cloudflare account            anywh
 3. Anonymized batches sync to a Cloudflare Worker + D1 (free tier is plenty).
 4. The Worker renders your SVG card on demand, cached 60s.
 
-## Deploy your own
+## Deploy your own — one command
 
-You need: Python 3, Node 18+, a free [Cloudflare account](https://dash.cloudflare.com/sign-up), and [Claude Code](https://claude.com/claude-code).
+You need: Python 3, Node 18+, git, and a free [Cloudflare account](https://dash.cloudflare.com/sign-up).
+
+```bash
+git clone https://github.com/augbastos/devcard && cd devcard && python setup.py
+```
+
+The wizard does everything: creates your D1 database, applies the schema, generates and stores your ingest token, deploys your Worker, installs the capture hook, runs an end-to-end smoke test, and prints your ready-to-paste embed snippet. Two questions, ~2 minutes.
+
+## Capture modes — Claude Code, Codex, local models, anything
+
+Pick **one** mode per machine (both together would double-count the same lines):
+
+| Mode | How it captures | Works with |
+|---|---|---|
+| `claude` | Live, per-edit, via Claude Code's `PostToolUse` hook | Claude Code |
+| `git` | Per-commit, from the real `git diff --numstat` of each commit | **Codex, Cursor, aider, local models, hand-typed code — anything that commits** |
+
+The `git` mode hooks git itself, not the agent — so it's universal. Install it into any repos you want tracked (appends safely to existing hooks like husky):
+
+```bash
+python hook/install_git_hook.py C:/path/to/your/projects
+```
+
+<details>
+<summary><strong>Manual setup</strong> (if you prefer to see every step)</summary>
 
 ### 1. Clone and create your backend
 
@@ -103,7 +127,9 @@ Add to `~/.claude/settings.json` (adjust both paths to your machine):
 
 Restart Claude Code, write some code, and open `https://<your-worker-url>/svg?user=<you>`. That's your card.
 
-### 5. Embed it
+</details>
+
+### Embed it
 
 ```html
 <img src="https://<your-worker-url>/svg?user=<you>" alt="devcard" />

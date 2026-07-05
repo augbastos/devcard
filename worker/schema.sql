@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS events (
   language TEXT,
   lines_added INTEGER NOT NULL DEFAULT 0,
   lines_removed INTEGER NOT NULL DEFAULT 0,
+  bytes_added INTEGER NOT NULL DEFAULT 0,
   event_type TEXT NOT NULL,
   client_event_id INTEGER
 );
