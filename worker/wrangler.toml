@@ -1,0 +1,11 @@
+name = "card"
+main = "src/index.ts"
+compatibility_date = "2026-07-05"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "devcard"
+database_id = "6cfd7bbe-6ace-4f91-8c8d-97b333b16f66"
+
+[vars]
+GITHUB_USERNAME = "augbastos"
