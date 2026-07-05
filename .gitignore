@@ -1,0 +1,9 @@
+.worktrees/
+__pycache__/
+*.pyc
+node_modules/
+.wrangler/
+*.db
+.dev.vars
+docs/superpowers/
+.superpowers/
