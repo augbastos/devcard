@@ -199,12 +199,12 @@ npx wrangler d1 execute devcard --remote --command \
 
 ## Customize it (please do)
 
-MIT licensed — fork it and make it yours. Everything visual lives in one function (`renderCard` in `worker/src/index.ts`):
+MIT licensed — fork it and make it yours. No framework, no build step for the card itself — just plain SVG template strings:
 
-- **Colors/themes**: one `<style>` block with light + dark palettes
-- **Layout**: plain SVG template strings, no framework
-- **Languages**: `EXT_LANGUAGE` map in `hook/devcard_lib.py`, colors in `LANGUAGE_COLORS`
-- **Strings/locales**: add a language to `STRINGS` in ~1 line
+- **Colors/themes**: token sets (light + optional dark) in `worker/src/themes.ts` — a new theme is a handful of hex values
+- **Layout**: `worker/src/render.ts` (`full`) and `worker/src/render-layouts.ts` (`banner`/`half`/`vertical`)
+- **Languages**: detection via the `EXT_LANGUAGE` map in `hook/devcard_lib.py`, colors via `LANGUAGE_COLORS` in `worker/src/svg-utils.ts`
+- **Strings/locales**: add a language to `STRINGS` in `worker/src/index.ts` in ~1 line
 
 ## Privacy model
 
