@@ -3,7 +3,8 @@ import json
 import os
 import sqlite3
 import time
-import urllib.request
+# urllib.request is imported lazily inside send_to_worker — it costs ~150ms to
+# import and the hot capture path (hook per tool call) never needs it.
 
 DB_PATH = os.path.normpath(os.path.expanduser("~/.claude/devcard/events.db"))
 ERROR_LOG_PATH = os.path.normpath(os.path.expanduser("~/.claude/devcard/errors.log"))
@@ -182,6 +183,8 @@ def log_error(message, path=ERROR_LOG_PATH):
 
 def send_to_worker(events, repo_count_value, url=WORKER_INGEST_URL, token=None, timeout=1.5):
     """POST a batch of events plus the current repo count to the Worker. Returns True on success."""
+    import urllib.request
+
     token = token if token is not None else INGEST_TOKEN
     body = json.dumps({"events": events, "repo_count": repo_count_value}).encode("utf-8", errors="replace")
     req = urllib.request.Request(

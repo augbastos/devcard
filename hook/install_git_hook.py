@@ -35,7 +35,7 @@ def install_into(repo):
     hook_path = os.path.join(repo, ".git", "hooks", "post-commit")
     python = sys.executable.replace("\\", "/")
     script = HOOK_SCRIPT.replace("\\", "/")
-    line = f'"{python}" "{script}" >/dev/null 2>&1 &  {MARKER}\n'
+    line = f'"{python}" -S "{script}" >/dev/null 2>&1 &  {MARKER}\n'
 
     if os.path.exists(hook_path):
         with open(hook_path, encoding="utf-8") as f:
