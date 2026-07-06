@@ -132,13 +132,13 @@ class TestSendToWorker(unittest.TestCase):
             captured["request"] = req
             return mock_resp
 
-        with mock.patch("devcard_lib.urllib.request.urlopen", side_effect=fake_urlopen):
+        with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
             ok = lib.send_to_worker([{"id": 1}], 3, url="https://example.test/ingest", token="tok")
         self.assertTrue(ok)
         self.assertEqual(captured["request"].get_header("User-agent"), "devcard-hook/1.0")
 
     def test_failure_is_swallowed(self):
-        with mock.patch("devcard_lib.urllib.request.urlopen", side_effect=OSError("boom")):
+        with mock.patch("urllib.request.urlopen", side_effect=OSError("boom")):
             ok = lib.send_to_worker([{"id": 1}], 3, url="https://example.test/ingest", token="tok")
         self.assertFalse(ok)
 
