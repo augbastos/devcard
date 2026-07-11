@@ -21,13 +21,13 @@ interface IngestEvent {
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === "POST" && url.pathname === "/ingest") {
       return handleIngest(request, env);
     }
     if (request.method === "GET" && url.pathname === "/svg") {
-      return handleSvg(request, env);
+      return handleSvgCached(request, env, ctx);
     }
     return new Response("not found", { status: 404 });
   },
@@ -73,9 +73,55 @@ function sanitizeEvent(e: unknown): IngestEvent | null {
   };
 }
 
+// Constant-time string compare — avoids leaking the ingest token via
+// response-timing differences on a byte-by-byte mismatch (CWE-208).
+function timingSafeEqual(a: string, b: string): boolean {
+  const enc = new TextEncoder();
+  const aBytes = enc.encode(a);
+  const bBytes = enc.encode(b);
+  const len = Math.max(aBytes.length, bBytes.length);
+  let diff = aBytes.length ^ bBytes.length;
+  for (let i = 0; i < len; i++) {
+    diff |= (aBytes[i] ?? 0) ^ (bBytes[i] ?? 0);
+  }
+  return diff === 0;
+}
+
+// Reads the request body up to `limit` bytes without buffering past it —
+// an attacker can omit or lie about Content-Length, so this is the
+// authoritative cap (the header check above is just a cheap fast-path).
+async function readBodyWithLimit(
+  request: Request,
+  limit: number
+): Promise<{ ok: true; text: string } | { ok: false }> {
+  if (!request.body) return { ok: true, text: "" };
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      total += value.byteLength;
+      if (total > limit) {
+        await reader.cancel();
+        return { ok: false };
+      }
+      chunks.push(value);
+    }
+  }
+  const buf = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    buf.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { ok: true, text: new TextDecoder().decode(buf) };
+}
+
 async function handleIngest(request: Request, env: Env): Promise<Response> {
   const token = request.headers.get("X-Devcard-Token");
-  if (!token || token !== env.INGEST_TOKEN) {
+  if (!token || !timingSafeEqual(token, env.INGEST_TOKEN)) {
     return new Response("unauthorized", { status: 401 });
   }
 
@@ -84,9 +130,14 @@ async function handleIngest(request: Request, env: Env): Promise<Response> {
     return new Response("payload too large", { status: 413 });
   }
 
+  const read = await readBodyWithLimit(request, MAX_BODY_BYTES);
+  if (!read.ok) {
+    return new Response("payload too large", { status: 413 });
+  }
+
   let body: { events: unknown; repo_count?: unknown };
   try {
-    body = await request.json();
+    body = JSON.parse(read.text);
   } catch {
     return new Response("bad json", { status: 400 });
   }
@@ -206,8 +257,23 @@ async function handleSvg(request: Request, env: Env): Promise<Response> {
   return new Response(svg, {
     headers: {
       "Content-Type": "image/svg+xml; charset=utf-8",
-      "Cache-Control": "public, max-age=60",
+      "Cache-Control": "public, max-age=60, s-maxage=30",
       "Vary": "Accept-Language",
     },
   });
+}
+
+// Wraps handleSvg with the edge Cache API, keyed on the full request URL
+// (query params included, so ?theme=/?layout=/?lang= each get their own
+// entry). s-maxage=30 on the response keeps entries short-lived.
+async function handleSvgCached(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const cache = await caches.open("default");
+  const cached = await cache.match(request);
+  if (cached) return cached;
+
+  const response = await handleSvg(request, env);
+  if (response.ok) {
+    ctx.waitUntil(cache.put(request, response.clone()));
+  }
+  return response;
 }
