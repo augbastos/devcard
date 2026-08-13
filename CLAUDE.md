@@ -16,7 +16,7 @@ events. Public repo, **MIT** (github.com/augbastos/devcard). Live at
 cd worker; npm run dev                 # wrangler dev (add --remote for real D1)
 cd worker; npx tsc --noEmit            # typecheck (must stay clean)
 cd worker; npm run deploy              # wrangler deploy → card.devcard.workers.dev
-C:/Python314/python.exe hook/test_devcard_lib.py    # 16 tests, must pass
+C:/Python314/python.exe hook/test_devcard_lib.py    # hook lib suite, must pass
 C:/Python314/python.exe setup.py       # full wizard (new deployments)
 ```
 No CI exists — run tests + tsc manually before any push.
