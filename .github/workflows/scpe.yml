@@ -7,8 +7,8 @@ name: scpe
 # nothing is installed on the runner — the Action runs one stdlib-only Python file out of
 # its own checkout at the tag pinned below.
 #
-# It is INFORMATIONAL right now: `require: "false"` posts the result as a comment and
-# never fails the check. Flip it to "true" to make the disclosure a merge requirement.
+# It is a GATE: `require: "true"` means a pull request with no AI-use disclosure fails
+# this check. Set it back to "false" to go back to an informational comment.
 #
 # TWO FILES, NOT ONE. The companion scpe-seal.yml holds the write token and posts the
 # comment; this file runs contributor code with no secrets. They cannot be merged: a
@@ -32,10 +32,10 @@ jobs:
           fetch-depth: 0
 
       - id: seal
-        uses: augbastos/scpe@v0.2.1
+        uses: augbastos/scpe@v0.2.3
         with:
           level: "1"                   # 1 = disclosure lint · 2 = signed envelope required
-          require: "false"             # "true" makes a missing disclosure fail the check
+          require: "true"             # "true" makes a missing disclosure fail the check
 
       # Hand the verdict + PR number to the trusted job. The number MUST travel in the
       # artifact: github.event.workflow_run.pull_requests is empty for fork PRs.
