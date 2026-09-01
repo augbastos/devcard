@@ -258,7 +258,8 @@ This is also why the levels/XP system isn't rendered yet — gamified numbers de
 ## Known limits (v1)
 
 - Single-user per deployment (your card, your Worker).
-- Line counts for edits are approximate (counts edited regions, not a semantic diff).
+- **"Lines written" means written, not net new.** In `claude` mode an edit counts the region it replaced and a write counts the whole file — so rewriting a 500-line file twice counts 1,000. That is the honest reading of "output of your AI coding sessions", and it's why the card doesn't say "lines of code". `git` mode has no such gap: it reads real `git diff --numstat` per commit.
+- Commits count invocations that create a commit: `--amend` is excluded (it rewrites one already counted), a quoted mention like `git log --grep="git commit"` doesn't count, and a commit whose tool call reports failure isn't recorded. A commit that fails *without* the tool reporting it — an empty commit, a rejected hook — can still slip through in `claude` mode.
 - Inside `<img>`, SVG links aren't clickable (browser limitation — same as every stats card). Open the card URL directly for clickable repos/Sponsor.
 - Levels/XP system exists in the data model but is intentionally not rendered yet — it needs anti-inflation tuning before it's fair across users.
 
