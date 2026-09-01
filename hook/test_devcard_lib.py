@@ -88,6 +88,62 @@ class TestParseEvent(unittest.TestCase):
         self.assertIsNone(lib.parse_event(payload))
 
 
+class TestCountsAsCommit(unittest.TestCase):
+    def test_plain_commit(self):
+        self.assertTrue(lib.counts_as_commit('git commit -m "x"'))
+
+    def test_commit_after_a_shell_separator(self):
+        self.assertTrue(lib.counts_as_commit('git add -A && git commit -m "x"'))
+
+    def test_commit_with_leading_flags(self):
+        self.assertTrue(lib.counts_as_commit("git -C /repo commit -m x"))
+        self.assertTrue(lib.counts_as_commit("git --no-pager commit -m x"))
+
+    def test_amend_does_not_count(self):
+        # rewrites a commit that was already counted
+        self.assertFalse(lib.counts_as_commit('git commit --amend -m "x"'))
+
+    def test_quoted_mention_does_not_count(self):
+        self.assertFalse(lib.counts_as_commit('git log --grep="git commit"'))
+
+    def test_unrelated_command(self):
+        self.assertFalse(lib.counts_as_commit("git status"))
+        self.assertFalse(lib.counts_as_commit(""))
+
+
+class TestToolFailed(unittest.TestCase):
+    def test_missing_response_is_not_a_failure(self):
+        # PostToolUse generally fires on success; absence must not drop events
+        self.assertFalse(lib.tool_failed({}))
+        self.assertFalse(lib.tool_failed({"tool_response": None}))
+        self.assertFalse(lib.tool_failed({"tool_response": "some string"}))
+
+    def test_explicit_failure_is_detected(self):
+        self.assertTrue(lib.tool_failed({"tool_response": {"success": False}}))
+        self.assertTrue(lib.tool_failed({"tool_response": {"is_error": True}}))
+
+    def test_success_is_not_a_failure(self):
+        self.assertFalse(lib.tool_failed({"tool_response": {"success": True}}))
+
+    def test_failed_commit_is_not_recorded(self):
+        payload = {
+            "tool_name": "Bash",
+            "tool_input": {"command": 'git commit -m "x"'},
+            "cwd": "/repo",
+            "tool_response": {"success": False},
+        }
+        self.assertIsNone(lib.parse_event(payload))
+
+    def test_successful_commit_is_recorded(self):
+        payload = {
+            "tool_name": "Bash",
+            "tool_input": {"command": 'git commit -m "x"'},
+            "cwd": "/repo",
+            "tool_response": {"success": True},
+        }
+        self.assertEqual(lib.parse_event(payload)["event_type"], "commit")
+
+
 class TestDatabase(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()

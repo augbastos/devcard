@@ -182,7 +182,7 @@ async function handleIngest(request: Request, env: Env): Promise<Response> {
 
 const STRINGS: Record<string, Strings> = {
   en: {
-    lines: "lines of code",
+    lines: "lines written",
     edits: "code edits",
     commits: "commits",
     repos: "repos",
@@ -195,7 +195,7 @@ const STRINGS: Record<string, Strings> = {
     locale: "en",
   },
   pt: {
-    lines: "linhas de código",
+    lines: "linhas escritas",
     edits: "edições de código",
     commits: "commits",
     repos: "repos",
@@ -208,7 +208,7 @@ const STRINGS: Record<string, Strings> = {
     locale: "pt",
   },
   es: {
-    lines: "líneas de código",
+    lines: "líneas escritas",
     edits: "ediciones de código",
     commits: "commits",
     repos: "repos",

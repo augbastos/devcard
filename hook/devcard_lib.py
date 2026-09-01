@@ -1,6 +1,7 @@
 """Shared helpers for the devcard Claude Code hook."""
 import json
 import os
+import re
 import sqlite3
 import time
 # urllib.request is imported lazily inside send_to_worker — it costs ~150ms to
@@ -112,6 +113,45 @@ def count_lines(text):
     return text.count("\n") + 1
 
 
+# Shell separators that start a fresh command within one Bash invocation.
+_SHELL_SPLIT = re.compile(r"&&|\|\||[;\n|]")
+# A segment that actually *invokes* `git commit`, tolerating a path-qualified
+# binary and leading flags (`git -C /repo commit`, `git --no-pager commit`).
+_GIT_COMMIT = re.compile(r"^\s*(?:\S*[/\\])?git(?:\.exe)?\s+(?:-\S+\s+\S+\s+|-\S+\s+)*commit\b")
+
+
+def counts_as_commit(command):
+    """True if `command` runs a commit that creates a new one.
+
+    Substring matching used to count `git log --grep="git commit"` and, worse,
+    `--amend` — which re-commits work already counted. Splitting on shell
+    separators and anchoring per segment keeps a quoted mention from counting.
+    """
+    if not command:
+        return False
+    for segment in _SHELL_SPLIT.split(command):
+        if not _GIT_COMMIT.match(segment):
+            continue
+        if "--amend" in segment:
+            return False  # rewrites an existing commit, never a new one
+        return True
+    return False
+
+
+def tool_failed(payload):
+    """True only when the payload positively reports the tool failed.
+
+    PostToolUse generally fires on success, so an absent or unfamiliar
+    `tool_response` must not suppress an event — the default stays "count it".
+    """
+    response = payload.get("tool_response")
+    if not isinstance(response, dict):
+        return False
+    if response.get("success") is False:
+        return True
+    return bool(response.get("is_error") or response.get("isError"))
+
+
 def parse_event(payload):
     """Turn a raw Claude Code hook payload into a normalized event dict, or None."""
     tool_name = payload.get("tool_name")
@@ -146,7 +186,7 @@ def parse_event(payload):
 
     if tool_name == "Bash":
         command = tool_input.get("command", "")
-        if "git commit" in command:
+        if counts_as_commit(command) and not tool_failed(payload):
             return {
                 "ts": now, "language": None, "lines_added": 0,
                 "lines_removed": 0, "bytes_added": 0,
