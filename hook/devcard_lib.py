@@ -9,7 +9,16 @@ import time
 DB_PATH = os.path.normpath(os.path.expanduser("~/.claude/devcard/events.db"))
 ERROR_LOG_PATH = os.path.normpath(os.path.expanduser("~/.claude/devcard/errors.log"))
 TOKEN_PATH = os.path.normpath(os.path.expanduser("~/.claude/devcard/token"))
+GITHUB_CACHE_PATH = os.path.normpath(os.path.expanduser("~/.claude/devcard/github-repos.json"))
 WORKER_INGEST_URL = "https://card.devcard.workers.dev/ingest"
+
+# How long a fetched GitHub repo count stays fresh. The number moves a handful
+# of times a year; refetching per sync would just burn API calls.
+GITHUB_CACHE_TTL = 21600  # 6 hours
+# Failures are cached too, on a much shorter clock. Without this a broken or
+# logged-out `gh` would be re-spawned — and logged — on every sync, which runs
+# every 20s and would bury the error log it writes to.
+GITHUB_FAILURE_TTL = 600  # 10 minutes
 
 
 def _load_token():
@@ -42,6 +51,58 @@ def language_for_path(path):
     """Return the language name for a file path, or None if unrecognized."""
     _, ext = os.path.splitext(path.lower())
     return EXT_LANGUAGE.get(ext)
+
+
+# Directory names that are working directories but never a project of your own:
+# agent session scratchpads, dependency trees, virtualenvs, caches. Counting
+# these as repos is what made the card claim 115 when the real number was 40.
+UNTRACKED_SEGMENTS = frozenset({
+    "node_modules", "scratchpad", "scratch", "npm-cache",
+    "site-packages", "__pycache__", ".venv", "venv", ".worktrees", ".cache",
+})
+
+# Read from the environment rather than `tempfile` — importing tempfile pulls in
+# shutil, and this module is imported on every captured tool call. Tests patch
+# this to point somewhere they control.
+TEMP_ROOT = os.path.normcase(
+    os.environ.get("TEMP") or os.environ.get("TMPDIR") or os.environ.get("TMP") or "/tmp"
+)
+
+
+def is_trackable_project(path):
+    """True if `path` looks like somewhere real work lives.
+
+    Pure string work — this runs on the hot capture path, so it must never
+    touch the filesystem or spawn anything.
+    """
+    if not path:
+        return False
+    normalized = path.replace("/", os.sep)
+    if any(part in UNTRACKED_SEGMENTS for part in normalized.lower().split(os.sep)):
+        return False
+    cased = os.path.normcase(normalized)
+    # Compare on a separator boundary so ".../Temp" doesn't also swallow
+    # ".../Temperature-app".
+    return cased != TEMP_ROOT and not cased.startswith(TEMP_ROOT.rstrip(os.sep) + os.sep)
+
+
+def git_root(path):
+    """Nearest ancestor of `path` containing a `.git` entry, or None.
+
+    Walking up matters because a cwd is usually a *subdirectory* of the repo:
+    counting raw cwds made one repo (lucky-cat) register as eleven.
+    """
+    try:
+        current = os.path.abspath(path)
+    except (OSError, ValueError):
+        return None
+    while True:
+        if os.path.exists(os.path.join(current, ".git")):
+            return os.path.normcase(current)
+        parent = os.path.dirname(current)
+        if parent == current:  # hit the drive root
+            return None
+        current = parent
 
 
 def count_lines(text):
@@ -135,18 +196,94 @@ def insert_event(conn, event):
         (event["ts"], event["language"], event["lines_added"], event["lines_removed"],
          event.get("bytes_added", 0), event["event_type"], event["project_key"]),
     )
-    conn.execute(
-        "INSERT OR IGNORE INTO known_repos (project_key, first_seen) VALUES (?, ?)",
-        (event["project_key"], event["ts"]),
-    )
+    if is_trackable_project(event["project_key"]):
+        conn.execute(
+            "INSERT OR IGNORE INTO known_repos (project_key, first_seen) VALUES (?, ?)",
+            (event["project_key"], event["ts"]),
+        )
     conn.commit()
     return cur.lastrowid
 
 
+def local_repo_count(conn):
+    """Distinct git repositories worked in, resolved from the recorded cwds.
+
+    Collapses subdirectories onto their repo root and drops paths that aren't
+    inside a repo at all. Filesystem-bound, so only the detached syncer calls
+    it — never the capture hot path.
+    """
+    roots = set()
+    for (key,) in conn.execute("SELECT project_key FROM known_repos"):
+        if not is_trackable_project(key):
+            continue
+        root = git_root(key)
+        if root:
+            roots.add(root)
+    return len(roots)
+
+
+def github_repo_count(now=None):
+    """Repositories owned on GitHub (public + private), or None if unavailable.
+
+    Read through the `gh` CLI, which is already authenticated on the owner's
+    machine — that keeps the private half of the count reachable without
+    putting a GitHub token in the public Worker. Cached on disk; failures
+    return None so the caller can fall back rather than publish a wrong number.
+    """
+    now = time.time() if now is None else now
+    try:
+        with open(GITHUB_CACHE_PATH, encoding="utf-8") as f:
+            cached = json.load(f)
+        age = now - cached["fetched_at"]
+        count = cached["count"]
+        if count is None:
+            if age < GITHUB_FAILURE_TTL:
+                return None  # recent failure — don't re-spawn gh or re-log
+        elif age < GITHUB_CACHE_TTL:
+            return int(count)
+    except (OSError, ValueError, KeyError, TypeError):
+        pass  # no cache, corrupt cache, or stale — fall through and refetch
+
+    count = None
+    try:
+        import shutil
+        import subprocess
+
+        gh = shutil.which("gh")
+        if gh:
+            proc = subprocess.run(
+                [gh, "api", "user", "--jq", "{public:.public_repos,private:.owned_private_repos}"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if proc.returncode == 0:
+                data = json.loads(proc.stdout)
+                count = int(data["public"]) + int(data["private"])
+            else:
+                log_error(f"github_repo_count: gh exited {proc.returncode}")
+    except Exception as exc:
+        log_error(f"github_repo_count failed: {exc}")
+
+    try:
+        os.makedirs(os.path.dirname(GITHUB_CACHE_PATH), exist_ok=True)
+        with open(GITHUB_CACHE_PATH, "w", encoding="utf-8") as f:
+            json.dump({"count": count, "fetched_at": int(now)}, f)
+    except OSError:
+        pass  # cache is an optimization; the number is still good
+    return count
+
+
 def repo_count(conn):
-    """Return the number of distinct local projects ever seen."""
-    row = conn.execute("SELECT COUNT(*) FROM known_repos").fetchone()
-    return row[0]
+    """The repo count the card publishes.
+
+    GitHub is the source of truth — it's the number the card's link resolves
+    to. Local git roots are the fallback for machines without `gh`; the raw
+    count of working directories is never published, because it counts
+    scratchpads and subfolders as repositories.
+    """
+    remote = github_repo_count()
+    if remote is not None:
+        return remote
+    return local_repo_count(conn)
 
 
 def get_unsynced_events(conn, limit=50):

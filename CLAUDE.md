@@ -46,9 +46,25 @@ No CI exists — run tests + tsc manually before any push.
   limitation, same as all stats cards).
 - Levels/XP exist in data but are deliberately NOT rendered (anti-inflation
   tuning pending) — don't "helpfully" re-add them.
+- **`repo_count` is the GitHub owned-repo total** (public + private, read via the
+  local `gh` CLI), NOT a count of `known_repos` rows. Those rows are raw cwds —
+  scratchpads, `node_modules`, and eleven subfolders of one repo included — and
+  publishing them straight is what made the card claim **115 repos against a
+  real 40**. `local_repo_count()` (distinct git roots) is the no-`gh` fallback;
+  the raw row count is never published.
+- Tests must never let `log_error` hit the real `~/.claude/devcard/errors.log` —
+  stub it. That file is the documented debugging surface; fake "boom" entries
+  from test runs already polluted it once.
 
-## State (2026-07-06 — update when it changes)
+## State (2026-09-01 — update when it changes)
 v2 live: heatmap (16w, timezone-aware), real streak + flame, staleness line,
 6 themes (?theme= default/dark/light/gentle/cyberpunk/terminal), 4 layouts
 (?layout= full/banner/half/vertical). Worker split into modules (queries/themes/
 render/render-layouts/svg-utils).
+
+⚠️ **The deployed Worker is the 2026-07-05 build.** Commit `f26cb35`
+(constant-time token compare, authoritative body-size cap, SVG edge cache) is on
+public `master` but has never been deployed — the README describes hardening the
+live Worker does not have. `caches.open("default")` in that commit was verified
+to work under `wrangler dev`, so deploying is safe. Audit:
+`C:\IA\_audits\devcard-audit-2026-09-01.md`.

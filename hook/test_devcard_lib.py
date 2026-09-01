@@ -97,16 +97,23 @@ class TestDatabase(unittest.TestCase):
     def tearDown(self):
         self.conn.close()
 
-    def test_insert_and_repo_count(self):
+    def _known_repos(self):
+        return self.conn.execute("SELECT COUNT(*) FROM known_repos").fetchone()[0]
+
+    def test_insert_records_distinct_projects(self):
+        # Records the cwd it saw; turning those cwds into a published number is
+        # repo_count's job, and it deliberately does not equal this row count.
         event = {
             "ts": 1000, "language": "Python", "lines_added": 5,
             "lines_removed": 1, "event_type": "edit", "project_key": "/repo/a",
         }
         lib.insert_event(self.conn, event)
-        self.assertEqual(lib.repo_count(self.conn), 1)
+        self.assertEqual(self._known_repos(), 1)
+        lib.insert_event(self.conn, event)  # same project again
+        self.assertEqual(self._known_repos(), 1)
         event["project_key"] = "/repo/b"
         lib.insert_event(self.conn, event)
-        self.assertEqual(lib.repo_count(self.conn), 2)
+        self.assertEqual(self._known_repos(), 2)
 
     def test_unsynced_events_and_mark_synced(self):
         event = {
@@ -138,9 +145,201 @@ class TestSendToWorker(unittest.TestCase):
         self.assertEqual(captured["request"].get_header("User-agent"), "devcard-hook/1.0")
 
     def test_failure_is_swallowed(self):
-        with mock.patch("urllib.request.urlopen", side_effect=OSError("boom")):
+        # log_error is stubbed so the failure path can't append fake entries to
+        # the owner's real ~/.claude/devcard/errors.log — that file is the
+        # documented starting point for debugging a silent hook.
+        with mock.patch("urllib.request.urlopen", side_effect=OSError("boom")), \
+                mock.patch.object(lib, "log_error") as logged:
             ok = lib.send_to_worker([{"id": 1}], 3, url="https://example.test/ingest", token="tok")
         self.assertFalse(ok)
+        logged.assert_called_once()
+
+
+class TestIsTrackableProject(unittest.TestCase):
+    def test_plain_repo_path_is_trackable(self):
+        self.assertTrue(lib.is_trackable_project(os.path.join("C:", "IA", "wavr")))
+
+    def test_scratchpad_is_rejected(self):
+        path = os.path.join("C:", "Temp", "claude", "abc", "scratchpad", "site")
+        self.assertFalse(lib.is_trackable_project(path))
+
+    def test_dependency_tree_is_rejected(self):
+        self.assertFalse(
+            lib.is_trackable_project(os.path.join("C:", "IA", "app", "node_modules", "next"))
+        )
+
+    def test_anything_under_the_temp_root_is_rejected(self):
+        temp = os.path.normcase(os.path.join("C:", "tmp-root"))
+        with mock.patch.object(lib, "TEMP_ROOT", temp):
+            self.assertFalse(lib.is_trackable_project(os.path.join(temp, "scpe-demo")))
+            self.assertFalse(lib.is_trackable_project(temp))
+            self.assertTrue(lib.is_trackable_project(os.path.join("C:", "IA", "wavr")))
+
+    def test_temp_root_only_matches_on_a_separator_boundary(self):
+        temp = os.path.normcase(os.path.join("C:", "Users", "x", "Temp"))
+        with mock.patch.object(lib, "TEMP_ROOT", temp):
+            # a sibling directory that merely shares the prefix is still real work
+            self.assertTrue(
+                lib.is_trackable_project(os.path.join("C:", "Users", "x", "Temperature-app"))
+            )
+
+    def test_forward_slashes_are_normalized(self):
+        self.assertFalse(lib.is_trackable_project("C:/Users/x/AppData/Local/Temp/scratchpad"))
+
+    def test_empty_path_is_rejected(self):
+        self.assertFalse(lib.is_trackable_project(""))
+
+
+class TestGitRoot(unittest.TestCase):
+    def test_finds_root_from_subdirectory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = os.path.realpath(tmp)
+            os.makedirs(os.path.join(root, ".git"))
+            nested = os.path.join(root, "src", "deep")
+            os.makedirs(nested)
+            self.assertEqual(lib.git_root(nested), os.path.normcase(root))
+
+    def test_returns_none_outside_a_repo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(lib.git_root(os.path.join(tmp, "plain")))
+
+
+class TestRepoCount(unittest.TestCase):
+    def _db_with_projects(self, tmp, keys):
+        conn = lib.init_db(os.path.join(tmp, "events.db"))
+        for key in keys:
+            conn.execute(
+                "INSERT OR IGNORE INTO known_repos (project_key, first_seen) VALUES (?, 0)",
+                (key,),
+            )
+        conn.commit()
+        return conn
+
+    def test_local_count_collapses_subdirs_and_drops_junk(self):
+        # The scratch dirs below live under the OS temp root, which the real
+        # filter rejects wholesale — point TEMP_ROOT elsewhere so this exercises
+        # the git-root collapsing rather than the temp rule.
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(lib, "TEMP_ROOT", os.path.normcase(os.path.join("C:", "nowhere"))):
+            repo = os.path.join(tmp, "repo")
+            os.makedirs(os.path.join(repo, ".git"))
+            os.makedirs(os.path.join(repo, "site"))
+            os.makedirs(os.path.join(repo, "tests"))
+            loose = os.path.join(tmp, "not-a-repo")
+            os.makedirs(loose)
+            conn = self._db_with_projects(tmp, [
+                repo,                                  # the repo itself
+                os.path.join(repo, "site"),            # subdir of the same repo
+                os.path.join(repo, "tests"),           # subdir of the same repo
+                loose,                                 # not in any repo
+                os.path.join(tmp, "scratchpad", "x"),  # junk
+            ])
+            try:
+                self.assertEqual(lib.local_repo_count(conn), 1)
+            finally:
+                conn.close()
+
+    def test_insert_event_skips_untrackable_projects(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = lib.init_db(os.path.join(tmp, "events.db"))
+            try:
+                lib.insert_event(conn, {
+                    "ts": 1, "language": "Python", "lines_added": 1, "lines_removed": 0,
+                    "bytes_added": 1, "event_type": "write",
+                    "project_key": os.path.join(tmp, "scratchpad", "x"),
+                })
+                # the event still counts; only the "project" is not recorded
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM events").fetchone()[0], 1)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM known_repos").fetchone()[0], 0)
+            finally:
+                conn.close()
+
+    def test_github_count_wins_over_local(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = lib.init_db(os.path.join(tmp, "events.db"))
+            try:
+                with mock.patch.object(lib, "github_repo_count", return_value=40):
+                    self.assertEqual(lib.repo_count(conn), 40)
+            finally:
+                conn.close()
+
+    def test_falls_back_to_local_when_github_unavailable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = lib.init_db(os.path.join(tmp, "events.db"))
+            try:
+                with mock.patch.object(lib, "github_repo_count", return_value=None), \
+                        mock.patch.object(lib, "local_repo_count", return_value=19):
+                    self.assertEqual(lib.repo_count(conn), 19)
+            finally:
+                conn.close()
+
+
+class TestGithubRepoCount(unittest.TestCase):
+    def test_fresh_cache_is_used_without_shelling_out(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = os.path.join(tmp, "github-repos.json")
+            with open(cache, "w", encoding="utf-8") as f:
+                f.write('{"count": 40, "fetched_at": 1000}')
+            with mock.patch.object(lib, "GITHUB_CACHE_PATH", cache), \
+                    mock.patch("shutil.which", side_effect=AssertionError("must not shell out")):
+                self.assertEqual(lib.github_repo_count(now=1001), 40)
+
+    def test_stale_cache_triggers_a_refetch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = os.path.join(tmp, "github-repos.json")
+            with open(cache, "w", encoding="utf-8") as f:
+                f.write('{"count": 3, "fetched_at": 0}')
+            proc = mock.Mock(returncode=0, stdout='{"public":12,"private":28}')
+            with mock.patch.object(lib, "GITHUB_CACHE_PATH", cache), \
+                    mock.patch("shutil.which", return_value="gh"), \
+                    mock.patch("subprocess.run", return_value=proc):
+                self.assertEqual(lib.github_repo_count(now=lib.GITHUB_CACHE_TTL + 1), 40)
+
+    def test_returns_none_without_gh(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(lib, "GITHUB_CACHE_PATH", os.path.join(tmp, "none.json")), \
+                    mock.patch("shutil.which", return_value=None):
+                self.assertIsNone(lib.github_repo_count(now=0))
+
+    def test_returns_none_when_gh_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = mock.Mock(returncode=1, stdout="")
+            with mock.patch.object(lib, "GITHUB_CACHE_PATH", os.path.join(tmp, "none.json")), \
+                    mock.patch.object(lib, "log_error"), \
+                    mock.patch("shutil.which", return_value="gh"), \
+                    mock.patch("subprocess.run", return_value=proc):
+                self.assertIsNone(lib.github_repo_count(now=0))
+
+    def test_a_recent_failure_is_not_retried_or_relogged(self):
+        # The syncer runs every ~20s; without a negative cache a logged-out gh
+        # would be re-spawned and re-logged each time, burying errors.log.
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = os.path.join(tmp, "github-repos.json")
+            proc = mock.Mock(returncode=1, stdout="")
+            with mock.patch.object(lib, "GITHUB_CACHE_PATH", cache), \
+                    mock.patch.object(lib, "log_error") as logged, \
+                    mock.patch("shutil.which", return_value="gh"), \
+                    mock.patch("subprocess.run", return_value=proc) as ran:
+                self.assertIsNone(lib.github_repo_count(now=0))
+                self.assertIsNone(lib.github_repo_count(now=1))
+                self.assertIsNone(lib.github_repo_count(now=lib.GITHUB_FAILURE_TTL - 1))
+            self.assertEqual(ran.call_count, 1)
+            self.assertEqual(logged.call_count, 1)
+
+    def test_failure_cache_expires_and_recovers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = os.path.join(tmp, "github-repos.json")
+            failing = mock.Mock(returncode=1, stdout="")
+            ok = mock.Mock(returncode=0, stdout='{"public":12,"private":28}')
+            with mock.patch.object(lib, "GITHUB_CACHE_PATH", cache), \
+                    mock.patch.object(lib, "log_error"), \
+                    mock.patch("shutil.which", return_value="gh"):
+                with mock.patch("subprocess.run", return_value=failing):
+                    self.assertIsNone(lib.github_repo_count(now=0))
+                with mock.patch("subprocess.run", return_value=ok):
+                    self.assertEqual(
+                        lib.github_repo_count(now=lib.GITHUB_FAILURE_TTL + 1), 40
+                    )
 
 
 if __name__ == "__main__":
