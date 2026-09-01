@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <img src="https://card.devcard.workers.dev/svg?user=augbastos" alt="devcard — live example" />
+  <img src="https://card.devcard.workers.dev/svg?user=augbastos&amp;theme=default" alt="devcard — live example" />
 </p>
 
 <p align="center"><em>↑ This is a real, live card. It updates within seconds of its owner writing code.</em></p>
