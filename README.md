@@ -29,7 +29,7 @@ Tools like WakaTime measure how long your editor is focused. devcard measures so
 
 - **Live, not batch.** The card reflects your latest coding session within seconds, not "synced last night."
 - **Measures agent output.** Built for the vibe-coding era: it captures what you *ship* with an AI agent, which keystroke timers can't see.
-- **Private by architecture, not by promise.** Project names, file paths, and code content **never leave your machine**. The public backend only ever receives: language, line counts, event type, timestamp, and a repo *count*. There is no column in the public database where a filename could even be stored.
+- **Private by architecture, not by promise.** Project names, file paths, and code content **never leave your machine**. The public backend only ever receives: language, line counts, event type, timestamp, and a repo *count* (your GitHub repository total — see [what it counts](#what-the-repo-count-actually-counts)). There is no column in the public database where a filename could even be stored.
 - **Embeds anywhere.** It's just an SVG URL — paste it in your GitHub profile README, portfolio, blog, anywhere `<img>` works.
 - **Speaks the viewer's language.** The card auto-localizes (en/pt/es) based on the visitor's browser. Force one with `?lang=pt`.
 - **Auto dark/light.** Follows the viewer's system theme via `prefers-color-scheme`.
@@ -226,6 +226,14 @@ MIT licensed — fork it and make it yours. No framework, no build step for the 
 | File names, code content | ❌ never stored | ❌ |
 
 The sync payload is built from a SQL projection that physically excludes project identifiers, and the public schema has nowhere to put them. Ingest is token-gated and idempotent.
+
+### What the repo count actually counts
+
+It is the number of repositories you **own on GitHub** — public plus private — read locally through the `gh` CLI (already authenticated on your machine) and shipped as a single integer. No GitHub token ever goes near the Worker, and the number matches what the card's `N repos →` link resolves to.
+
+If `gh` isn't installed or the call fails, the card falls back to counting the distinct **git repository roots** you've worked in, resolved from the working directories the hook recorded. Those directories stay local; only the total is published.
+
+The raw count of working directories is deliberately never published. A cwd is not a repo: agent scratchpads, `node_modules`, and eleven subfolders of one project would each register as "a repo" and inflate the number several-fold.
 
 ## Security model
 
