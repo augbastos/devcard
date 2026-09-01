@@ -1,4 +1,11 @@
-# devcard
+# devcard — a live, embeddable dev stats card powered by real AI-coding activity
+
+[![scpe](https://github.com/augbastos/devcard/actions/workflows/scpe.yml/badge.svg)](https://github.com/augbastos/devcard/actions/workflows/scpe.yml)
+[![scpe-seal](https://github.com/augbastos/devcard/actions/workflows/scpe-seal.yml/badge.svg)](https://github.com/augbastos/devcard/actions/workflows/scpe-seal.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178c6?logo=typescript&logoColor=white)
+![Cloudflare Workers + D1](https://img.shields.io/badge/Cloudflare-Workers%20%2B%20D1-f38020?logo=cloudflare&logoColor=white)
+![Python 3](https://img.shields.io/badge/Python-3-3776AB?logo=python&logoColor=white)
 
 **A live, embeddable dev stats card — powered by your real AI-assisted coding activity, not your keystrokes.**
 
@@ -30,14 +37,16 @@ Tools like WakaTime measure how long your editor is focused. devcard measures so
 
 ## How it works
 
-```
-Claude Code session                     your Cloudflare account            anywhere
-┌───────────────────┐  every edit   ┌───────────────┐   ┌────────┐   ┌──────────────────┐
-│ PostToolUse hook  ├──────────────▶│ local SQLite  │   │ Worker │◀──│ <img src=…/svg>  │
-│ (Python, stdlib)  │               │ (full detail) │   │  + D1  │   │  README / site   │
-└───────────────────┘               └───────┬───────┘   └────────┘   └──────────────────┘
-                                            │ anonymized batches ▲
-                                            └────────────────────┘
+```mermaid
+flowchart LR
+    subgraph M["your machine"]
+        CC["Claude Code<br/>PostToolUse hook"] -->|"every Edit / Write / Bash"| DB[("local SQLite<br/>full detail, offline-first")]
+        GT["git post-commit hook<br/>(Codex, Cursor, aider, hand-typed…)"] -->|"git diff --numstat"| DB
+        DB -->|"throttled, detached"| SY["devcard_sync.py"]
+    end
+    SY -->|"POST /ingest<br/>anonymized batches, token-gated"| W["Cloudflare Worker + D1"]
+    E["your embed<br/>README · site · anywhere"] -->|"GET /svg"| W
+    W -->|"rendered SVG<br/>cached 60s"| E
 ```
 
 1. A global Claude Code `PostToolUse` hook fires on every `Edit`/`Write`/`Bash` call — pure Python stdlib, zero token cost, runs in milliseconds, and **never blocks your session** (all errors are swallowed and logged locally).
