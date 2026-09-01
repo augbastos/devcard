@@ -26,8 +26,17 @@ export default {
     if (request.method === "POST" && url.pathname === "/ingest") {
       return handleIngest(request, env);
     }
-    if (request.method === "GET" && url.pathname === "/svg") {
-      return handleSvgCached(request, env, ctx);
+    // Image proxies and link checkers probe with HEAD before they fetch; a 404
+    // there makes an embed look dead even though the card renders fine. Answer
+    // with the real headers and no body. The Cache API only accepts GET, so the
+    // lookup runs against an equivalent GET request.
+    const isHead = request.method === "HEAD";
+    if ((request.method === "GET" || isHead) && url.pathname === "/svg") {
+      const getRequest = isHead
+        ? new Request(request.url, { method: "GET", headers: request.headers })
+        : request;
+      const response = await handleSvgCached(getRequest, env, ctx);
+      return isHead ? new Response(null, { status: response.status, headers: response.headers }) : response;
     }
     return new Response("not found", { status: 404 });
   },
