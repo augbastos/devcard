@@ -245,30 +245,27 @@ The card is designed so it can't be turned against its owner:
 - **Rendering is injection-safe.** Every dynamic string (badge labels, repo names, notes) is XML-escaped before entering the SVG; the SVG contains no scripts.
 - **Secrets never touch git.** The token lives in Wrangler's secret store + your env; `.dev.vars` is gitignored.
 
-## Data honesty
+## Counting rules
 
-Full disclosure: like every self-hosted stats card, the data is **self-reported** from the owner's machine — absolute proof is impossible without a trusted third party. What devcard does about it:
+Two capture modes, counting different things on purpose.
 
-- **Plausibility enforcement at ingest**: single events claiming absurd line counts, timestamps outside a sane window, or unknown event types are rejected server-side. Gross inflation requires sustained, visible effort rather than one fake request.
-- **Provenance on the card**: the "tracking since <date> · N events" line shows how long and how much has actually been measured — a fresh account claiming huge numbers is visibly suspicious.
-- **Roadmap**: device-key signed batches (tamper-evidence for the sync channel) and public per-day aggregate endpoints so anyone can inspect a card's history for anomalies.
+**`git` mode** reads `git diff --numstat` per commit, so a line is a real net change.
+Commits count invocations that produce a commit; `--amend` is excluded, because it
+rewrites one already counted.
 
-This is also why the levels/XP system isn't rendered yet — gamified numbers deserve stronger guarantees before they're comparable between people.
+**`claude` mode** counts written output — an edit counts the region it replaced, a
+write counts the file. That is why the card says *lines written* rather than *lines of
+code*: it measures what a session produced, not the size of a codebase.
 
-## Known limits (v1)
-
-- Single-user per deployment (your card, your Worker).
-- **"Lines written" means written, not net new.** In `claude` mode an edit counts the region it replaced and a write counts the whole file — so rewriting a 500-line file twice counts 1,000. That is the honest reading of "output of your AI coding sessions", and it's why the card doesn't say "lines of code". `git` mode has no such gap: it reads real `git diff --numstat` per commit.
-- Commits count invocations that create a commit: `--amend` is excluded (it rewrites one already counted), a quoted mention like `git log --grep="git commit"` doesn't count, and a commit whose tool call reports failure isn't recorded. A commit that fails *without* the tool reporting it — an empty commit, a rejected hook — can still slip through in `claude` mode.
-- Inside `<img>`, SVG links aren't clickable (browser limitation — same as every stats card). Open the card URL directly for clickable repos/Sponsor.
-- Levels/XP system exists in the data model but is intentionally not rendered yet — it needs anti-inflation tuning before it's fair across users.
+Ingest enforces plausibility server-side: events with impossible line counts,
+timestamps outside a sane window, or unknown types are rejected. The card's
+"tracking since" line shows how long the account has actually been measured.
 
 ## Roadmap
 
-- Levels & XP (balanced + abuse-resistant)
-- More locales and community themes (PRs welcome — a theme is ~20 lines of tokens in `worker/src/themes.ts`)
-- Multi-user hosted mode, profile comparison
-- Device-key signed batches (tamper-evident sync)
+- Signed batches for tamper-evident sync
+- More locales and community themes — a theme is about 20 lines of tokens in `worker/src/themes.ts`, PRs welcome
+- Multi-user hosted mode
 
 ---
 
