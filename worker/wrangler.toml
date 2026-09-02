@@ -10,3 +10,11 @@ database_id = "6cfd7bbe-6ace-4f91-8c8d-97b333b16f66"
 [vars]
 GITHUB_USERNAME = "augbastos"
 TIMEZONE = "Europe/Dublin"
+
+# Nightly rollup rebuild. The rollups the card renders from are maintained
+# incrementally at ingest, so they can drift — a deploy landing mid-write, a
+# manual INSERT, a bug. This recomputes them from `events` once a day, at a
+# quiet hour, so drift can never accumulate past 24h. Costs one pass over the
+# table: a fraction of a percent of D1's daily read allowance.
+[triggers]
+crons = ["17 4 * * *"]

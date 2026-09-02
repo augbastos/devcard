@@ -40,7 +40,76 @@ export default {
     }
     return new Response("not found", { status: 404 });
   },
+
+  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(rebuildRollups(env));
+  },
 };
+
+// How much of `agg_day` is worth keeping: the heatmap window the card draws,
+// plus a fortnight so a timezone or window change has something to fall back
+// on. Everything older is deleted on each rebuild, which is what keeps the
+// table flat instead of growing a row a day forever.
+const AGG_DAY_KEEP_DAYS = 16 * 7 + 14;
+
+// Recompute every rollup from `events`. Ingest maintains them incrementally,
+// which is fast but drifts: a deploy landing between a write and the code that
+// feeds it, a manual INSERT, a bug. Running this nightly means drift can never
+// outlive a day. It costs one pass over the table — a fraction of a percent of
+// the daily read allowance, versus the ~75k rows a single un-rolled-up card
+// render used to cost.
+//
+// An ingest landing between the reads and the writes below can be lost from the
+// aggregate; that is the same race the incremental path already has, and the
+// next night's run corrects it. That is the point of running it on a schedule
+// rather than reaching for a lock.
+async function rebuildRollups(env: Env): Promise<void> {
+  const dayFn = makeDayFn(env.TIMEZONE || "UTC");
+  const keepFrom = Math.floor(Date.now() / 1000) - AGG_DAY_KEEP_DAYS * 86400;
+
+  // Local calendar days cannot be computed in SQL — SQLite has no timezone
+  // database — but sending back one row per event would grow without bound.
+  // 15-minute buckets are the compromise: every real UTC offset is a multiple
+  // of 15 minutes, so bucketing this way never splits a local day in the wrong
+  // place, and the row count tracks hours spent coding rather than events.
+  const buckets = await env.DB.prepare(
+    "SELECT (ts / 900) * 900 AS bucket, SUM(lines_added) AS lines FROM events" +
+      " WHERE ts >= ? GROUP BY bucket"
+  )
+    .bind(keepFrom)
+    .all();
+
+  const byDay = new Map<string, number>();
+  for (const row of (buckets.results as { bucket: number; lines: number }[]) ?? []) {
+    const day = dayFn(row.bucket);
+    byDay.set(day, (byDay.get(day) ?? 0) + row.lines);
+  }
+
+  // D1 runs a batch as one transaction, so the card never observes a rollup
+  // that has been emptied but not yet refilled.
+  const statements: D1PreparedStatement[] = [
+    env.DB.prepare("DELETE FROM agg_language"),
+    env.DB.prepare(
+      "INSERT INTO agg_language (language, lines) SELECT language, SUM(lines_added)" +
+        " FROM events WHERE language IS NOT NULL GROUP BY language"
+    ),
+    env.DB.prepare("DELETE FROM agg_event_type"),
+    env.DB.prepare(
+      "INSERT INTO agg_event_type (event_type, n) SELECT event_type, COUNT(*)" +
+        " FROM events GROUP BY event_type"
+    ),
+    env.DB.prepare("DELETE FROM agg_day"),
+    ...[...byDay].map(([day, lines]) =>
+      env.DB.prepare("INSERT INTO agg_day (day, lines) VALUES (?, ?)").bind(day, lines)
+    ),
+    env.DB.prepare(
+      "UPDATE agg_totals SET bytes = (SELECT COALESCE(SUM(bytes_added), 0) FROM events)," +
+        " events = (SELECT COUNT(*) FROM events), first_ts = (SELECT MIN(ts) FROM events)" +
+        " WHERE id = 1"
+    ),
+  ];
+  await env.DB.batch(statements);
+}
 
 // Ingest hardening: strict types, plausibility caps, batch/body limits.
 // A single event can't claim more lines than a very large file write, and a
