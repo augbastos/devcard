@@ -39,7 +39,7 @@ const HEAT_WEEKS = 16;
 
 // Local calendar day (YYYY-MM-DD) for a unix timestamp in the owner's tz.
 // Intl handles DST correctly, which a fixed SQL offset would not.
-function makeDayFn(tz: string): (tsSec: number) => string {
+export function makeDayFn(tz: string): (tsSec: number) => string {
   const fmt = new Intl.DateTimeFormat("en-CA", {
     timeZone: tz,
     year: "numeric",
@@ -200,16 +200,21 @@ export async function loadCardData(env: DBEnv, monthLocale: string): Promise<Car
     await Promise.all([
       fetchAvatarDataUri(env.GITHUB_USERNAME),
       hasSponsors(env.GITHUB_USERNAME),
+      // Every query below reads a rollup, never `events`. The aggregates used to
+      // be computed here, which meant one render read one row per event ever
+      // recorded — see the rollup section in schema.sql. Ingest maintains these.
       env.DB.prepare(
-        "SELECT language, SUM(lines_added) as total FROM events WHERE language IS NOT NULL GROUP BY language ORDER BY total DESC"
+        "SELECT language, lines as total FROM agg_language WHERE lines > 0 ORDER BY total DESC"
       ).all(),
-      env.DB.prepare("SELECT SUM(bytes_added) as b FROM events").first(),
-      env.DB.prepare("SELECT event_type, COUNT(*) as n FROM events GROUP BY event_type").all(),
+      env.DB.prepare("SELECT bytes as b FROM agg_totals WHERE id = 1").first(),
+      env.DB.prepare("SELECT event_type, n FROM agg_event_type").all(),
       env.DB.prepare("SELECT repo_count, updated_at FROM stats_snapshot WHERE id = 1").first(),
       env.DB.prepare("SELECT kind, label FROM profile_entries ORDER BY created_at DESC LIMIT 8").all(),
       env.DB.prepare("SELECT repo, note FROM pinned_repos ORDER BY position ASC, id ASC LIMIT 3").all(),
-      env.DB.prepare("SELECT MIN(ts) as first_ts, COUNT(*) as n FROM events").first(),
-      env.DB.prepare("SELECT ts, lines_added FROM events WHERE ts >= ?").bind(heatCutoff).all(),
+      env.DB.prepare("SELECT first_ts, events as n FROM agg_totals WHERE id = 1").first(),
+      // Date strings sort lexicographically, so a plain >= on the day key gives
+      // the same window the old `ts >= ?` scan did, at one row per day.
+      env.DB.prepare("SELECT day, lines FROM agg_day WHERE day >= ?").bind(dayFn(heatCutoff)).all(),
     ]);
 
   const languages = (langRows.results as { language: string; total: number }[]) ?? [];
@@ -224,9 +229,8 @@ export async function loadCardData(env: DBEnv, monthLocale: string): Promise<Car
     .reduce((sum, r) => sum + r.n, 0);
 
   const dayLines = new Map<string, number>();
-  for (const row of (heatRows.results as { ts: number; lines_added: number }[]) ?? []) {
-    const day = dayFn(row.ts);
-    dayLines.set(day, (dayLines.get(day) ?? 0) + row.lines_added);
+  for (const row of (heatRows.results as { day: string; lines: number }[]) ?? []) {
+    dayLines.set(row.day, row.lines);
   }
   const today = dayFn(nowSec);
   const { weeks, monthMarks, streak } = buildHeatmap(dayLines, today, monthLocale);

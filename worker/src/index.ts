@@ -1,4 +1,4 @@
-import { loadCardData } from "./queries";
+import { loadCardData, makeDayFn } from "./queries";
 import { pickTheme } from "./themes";
 import { renderFull, Strings } from "./render";
 import { renderBanner, renderHalf, renderVertical } from "./render-layouts";
@@ -166,9 +166,12 @@ async function handleIngest(request: Request, env: Env): Promise<Response> {
     else skipped += 1;
   }
 
+  // RETURNING is what makes the rollups below safe: an INSERT OR IGNORE that
+  // hits the client_event_id unique index returns no row, so a hook that
+  // re-sends a batch cannot double-count itself into the aggregates.
   const statements = valid.map((e) =>
     env.DB.prepare(
-      "INSERT OR IGNORE INTO events (ts, language, lines_added, lines_removed, bytes_added, event_type, client_event_id) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      "INSERT OR IGNORE INTO events (ts, language, lines_added, lines_removed, bytes_added, event_type, client_event_id) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id"
     ).bind(e.ts, e.language, e.lines_added, e.lines_removed, e.bytes_added ?? 0, e.event_type, e.id ?? null)
   );
 
@@ -182,11 +185,74 @@ async function handleIngest(request: Request, env: Env): Promise<Response> {
     );
   }
 
+  let landed: IngestEvent[] = [];
   if (statements.length > 0) {
-    await env.DB.batch(statements);
+    const results = await env.DB.batch(statements);
+    landed = valid.filter((_, i) => ((results[i]?.results as unknown[] | undefined)?.length ?? 0) > 0);
+    const rollup = rollupStatements(env, landed);
+    if (rollup.length > 0) await env.DB.batch(rollup);
   }
 
-  return Response.json({ inserted: valid.length, skipped });
+  return Response.json({ inserted: landed.length, skipped, duplicates: valid.length - landed.length });
+}
+
+// Fold the events that actually landed into the rollup tables the card reads.
+// Written as one batch of UPSERTs keyed by language/type/day, so a 100-event
+// batch costs a handful of writes rather than one per event.
+function rollupStatements(env: Env, landed: IngestEvent[]): D1PreparedStatement[] {
+  if (landed.length === 0) return [];
+  const dayFn = makeDayFn(env.TIMEZONE || "UTC");
+
+  const byLanguage = new Map<string, number>();
+  const byType = new Map<string, number>();
+  const byDay = new Map<string, number>();
+  let bytes = 0;
+  let firstTs = Infinity;
+
+  for (const e of landed) {
+    if (e.language) byLanguage.set(e.language, (byLanguage.get(e.language) ?? 0) + e.lines_added);
+    byType.set(e.event_type, (byType.get(e.event_type) ?? 0) + 1);
+    const day = dayFn(e.ts);
+    byDay.set(day, (byDay.get(day) ?? 0) + e.lines_added);
+    bytes += e.bytes_added ?? 0;
+    if (e.ts < firstTs) firstTs = e.ts;
+  }
+
+  const out: D1PreparedStatement[] = [];
+  for (const [language, lines] of byLanguage) {
+    out.push(
+      env.DB.prepare(
+        "INSERT INTO agg_language (language, lines) VALUES (?, ?)" +
+          " ON CONFLICT(language) DO UPDATE SET lines = lines + excluded.lines"
+      ).bind(language, lines)
+    );
+  }
+  for (const [eventType, n] of byType) {
+    out.push(
+      env.DB.prepare(
+        "INSERT INTO agg_event_type (event_type, n) VALUES (?, ?)" +
+          " ON CONFLICT(event_type) DO UPDATE SET n = n + excluded.n"
+      ).bind(eventType, n)
+    );
+  }
+  for (const [day, lines] of byDay) {
+    out.push(
+      env.DB.prepare(
+        "INSERT INTO agg_day (day, lines) VALUES (?, ?)" +
+          " ON CONFLICT(day) DO UPDATE SET lines = lines + excluded.lines"
+      ).bind(day, lines)
+    );
+  }
+  // A late-arriving backfill can carry a timestamp older than anything seen so
+  // far, so first_ts only ever moves backwards.
+  out.push(
+    env.DB.prepare(
+      "UPDATE agg_totals SET bytes = bytes + ?, events = events + ?," +
+        " first_ts = CASE WHEN first_ts IS NULL OR first_ts > ? THEN ? ELSE first_ts END" +
+        " WHERE id = 1"
+    ).bind(bytes, landed.length, firstTs, firstTs)
+  );
+  return out;
 }
 
 const STRINGS: Record<string, Strings> = {
@@ -266,7 +332,7 @@ async function handleSvg(request: Request, env: Env): Promise<Response> {
   return new Response(svg, {
     headers: {
       "Content-Type": "image/svg+xml; charset=utf-8",
-      "Cache-Control": "public, max-age=60, s-maxage=30",
+      "Cache-Control": "public, max-age=300, s-maxage=300",
       "Vary": "Accept-Language",
     },
   });
@@ -274,7 +340,10 @@ async function handleSvg(request: Request, env: Env): Promise<Response> {
 
 // Wraps handleSvg with the edge Cache API, keyed on the full request URL
 // (query params included, so ?theme=/?layout=/?lang= each get their own
-// entry). s-maxage=30 on the response keeps entries short-lived.
+// entry). s-maxage was 30s, which had every embed revalidating ~2,880 times a
+// day per variant — GitHub's image proxy honours it, so a README that nobody
+// reloads still generated constant traffic. Five minutes is still live for a
+// card whose underlying hook writes in seconds.
 async function handleSvgCached(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const cache = await caches.open("default");
   const cached = await cache.match(request);
