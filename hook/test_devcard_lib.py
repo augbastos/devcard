@@ -1,9 +1,45 @@
 import os
+import shutil
 import tempfile
 import unittest
 from unittest import mock
 
 import devcard_lib as lib
+
+_MODULE_TMP = None
+_PATCHERS = []
+
+
+def setUpModule():
+    """Keep the whole module off the owner's real ~/.claude/devcard files.
+
+    `insert_event` reads the installation's source id, so without this the
+    suite's behaviour would depend on whether the developer happens to have one
+    — passing locally and failing on a CI runner that does not.
+    """
+    global _MODULE_TMP
+    _MODULE_TMP = tempfile.mkdtemp(prefix="devcard-lib-tests-")
+    for attr, name in (
+        ("DB_PATH", "events.db"),
+        ("ERROR_LOG_PATH", "errors.log"),
+        ("SOURCE_ID_PATH", "source-id"),
+        ("GITHUB_CACHE_PATH", "github-repos.json"),
+    ):
+        patcher = mock.patch.object(lib, attr, os.path.join(_MODULE_TMP, name))
+        patcher.start()
+        _PATCHERS.append(patcher)
+    # A normal installation has an id by the time it captures anything (the
+    # first sync creates one). Tests that need the no-id case redirect
+    # SOURCE_ID_PATH themselves.
+    lib.source_id()
+
+
+def tearDownModule():
+    for patcher in _PATCHERS:
+        patcher.stop()
+    _PATCHERS.clear()
+    if _MODULE_TMP:
+        shutil.rmtree(_MODULE_TMP, ignore_errors=True)
 
 
 class TestLanguageForPath(unittest.TestCase):
