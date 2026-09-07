@@ -1,3 +1,29 @@
+-- ---------------------------------------------------------------------------
+-- Events.
+--
+-- `client_event_id` is the local SQLite rowid the hook assigned. It is what
+-- makes ingest idempotent: a batch the hook re-sends after a lost response
+-- hits the unique index and is ignored instead of counted twice.
+--
+-- A rowid alone is NOT a global identity, though. Every install's sequence
+-- starts at 1, so a second machine's event 1 looked exactly like the first
+-- machine's event 1 and was silently dropped — and deleting the local
+-- events.db restarted the sequence, which made a fresh install's first
+-- thousand events collide with history. `source_id` fixes that: a random,
+-- opaque per-install id (see `source_id()` in hook/devcard_lib.py) that carries
+-- no hostname, username or path. Identity is the pair.
+--
+-- 'legacy' is the default so that rows written before this column existed, and
+-- hooks that predate it, keep exactly their previous dedupe behaviour.
+--
+-- The namespace belongs to the EVENT, not to the request. An event may carry
+-- its own `source_id`, overriding the batch's, and a single batch may mix them.
+-- That is what an upgrading hook needs: a backlog queued before it had an id
+-- was sent (and possibly stored) as `legacy`, so it has to go back as `legacy`
+-- even though the same batch also carries events captured afterwards under the
+-- installation's real id. Re-sending that backlog under the new id would look
+-- like different events and count the same work twice.
+-- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts INTEGER NOT NULL,
@@ -6,10 +32,12 @@ CREATE TABLE IF NOT EXISTS events (
   lines_removed INTEGER NOT NULL DEFAULT 0,
   bytes_added INTEGER NOT NULL DEFAULT 0,
   event_type TEXT NOT NULL,
-  client_event_id INTEGER
+  client_event_id INTEGER,
+  source_id TEXT NOT NULL DEFAULT 'legacy'
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_events_client_id ON events(client_event_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_events_source_client
+  ON events(source_id, client_event_id);
 
 CREATE TABLE IF NOT EXISTS stats_snapshot (
   id INTEGER PRIMARY KEY CHECK (id = 1),
