@@ -153,7 +153,15 @@ export function renderFull(data: CardData, theme: Theme, t: Strings): string {
   const footY = divY + 26;
   const stat = (xPos: number, n: string, label: string) =>
     `<text x="${xPos}" y="${footY}" font-size="12"><tspan class="txt" ${MONO} font-weight="700">${n}</tspan><tspan class="mut" ${SANS}> ${escapeXml(label)}</tspan></text>`;
-  const footer = stat(PAD, String(data.totalActions), t.edits) + stat(PAD + 200, String(data.totalCommits), t.commits);
+  // "code edits" counts agent tool calls, which only a claude-mode machine
+  // produces. A git-captured card has no comparable number — its `diff` rows
+  // are per-commit language aggregates — so rather than print an impressive
+  // but meaningless figure under that label, the slot is dropped and commits
+  // move into it. See "Counting rules" in the README.
+  const footer = data.totalActions > 0
+    ? stat(PAD, String(data.totalActions), t.edits) +
+      stat(PAD + 200, String(data.totalCommits), t.commits)
+    : stat(PAD, String(data.totalCommits), t.commits);
 
   const nowSec = Math.floor(Date.now() / 1000);
   const age = fmtAge(data.updatedAt, nowSec);
