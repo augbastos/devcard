@@ -17,7 +17,10 @@ export interface CardData {
   badges: { kind: string; label: string }[];
   pins: { repo: string; note: string | null; stars: number | null }[];
   totalCommits: number;
+  /** Agent tool calls that wrote code — `edit` + `write`, i.e. claude mode. */
   totalActions: number;
+  /** Per-commit, per-language diff rows — git mode. A different unit. */
+  totalDiffs: number;
   firstTs: number | null;
   totalEvents: number;
   updatedAt: number;
@@ -224,9 +227,14 @@ export async function loadCardData(env: DBEnv, monthLocale: string): Promise<Car
 
   const eventCounts = (eventTypeRows.results as { event_type: string; n: number }[]) ?? [];
   const totalCommits = eventCounts.find((r) => r.event_type === "commit")?.n ?? 0;
+  // `edit`/`write` are agent tool calls; `diff` rows are per-commit,
+  // per-language aggregates written by the git hook. Summing them into one
+  // "code edits" number made the same label mean two incomparable things
+  // depending on which capture mode produced the data, so they stay apart.
   const totalActions = eventCounts
     .filter((r) => r.event_type === "edit" || r.event_type === "write")
     .reduce((sum, r) => sum + r.n, 0);
+  const totalDiffs = eventCounts.find((r) => r.event_type === "diff")?.n ?? 0;
 
   const dayLines = new Map<string, number>();
   for (const row of (heatRows.results as { day: string; lines: number }[]) ?? []) {
@@ -255,6 +263,7 @@ export async function loadCardData(env: DBEnv, monthLocale: string): Promise<Car
     pins,
     totalCommits,
     totalActions,
+    totalDiffs,
     firstTs: provenance?.first_ts ?? null,
     totalEvents: provenance?.n ?? 0,
     updatedAt: snap?.updated_at ?? 0,

@@ -1,0 +1,88 @@
+name: ci
+
+# The product's own CI. The scpe / scpe-seal workflows next to this one check
+# that a pull request discloses AI use — they say nothing about whether the code
+# works, so they are not a substitute for this.
+#
+# Deliberately small: two jobs, no services, no deploy. Nothing here touches
+# Cloudflare — the Worker suite runs against workerd and a local D1 through
+# @cloudflare/vitest-pool-workers, so no account and no secret is involved, and
+# a fork's pull request runs the full suite like any other.
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+# A new push supersedes the run in flight for the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hook:
+    name: hook (python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    # A hung job would otherwise run for the 6-hour default. Both suites take
+    # well under a minute; this is a runaway guard, not a budget.
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor setup.py enforces, the current stable, and the newest.
+        python-version: ["3.9", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Identify git to the integration tests
+        # The suite builds throwaway repositories and commits into them; git
+        # refuses to commit without an identity.
+        run: |
+          git config --global user.email "ci@example.invalid"
+          git config --global user.name "devcard ci"
+          git config --global init.defaultBranch main
+
+      - name: Run the hook test suite
+        run: python -m unittest discover -s hook -p "test_*.py" -v
+
+  worker:
+    name: worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - name: Install the pinned toolchain
+        run: npm ci
+
+      - name: Typecheck the Worker
+        run: npx tsc --noEmit
+
+      - name: Typecheck the tests
+        run: npx tsc --noEmit -p test/tsconfig.json
+
+      - name: Run the Worker test suite
+        # Covers ingest auth, payload validation, body/batch caps, event
+        # identity, the cache key, rendering, escaping and the rollup rebuild —
+        # against real workerd and a real local D1.
+        run: npx vitest run

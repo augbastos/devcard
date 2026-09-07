@@ -56,6 +56,21 @@ export function renderBanner(data: CardData, theme: Theme, t: Strings): string {
 </svg>`;
 }
 
+// "code edits" counts agent tool calls, which only a claude-mode machine
+// produces; a git-captured card has no comparable number and shows commits
+// alone rather than a meaningless figure under that label.
+function statsRow(data: CardData, t: Strings, x: number): string {
+  const commits =
+    `<tspan class="txt" ${MONO} font-weight="700">${data.totalCommits}</tspan>` +
+    `<tspan class="mut" ${SANS}> ${escapeXml(t.commits)}</tspan>`;
+  const edits =
+    data.totalActions > 0
+      ? `<tspan class="txt" ${MONO} font-weight="700">${data.totalActions}</tspan>` +
+        `<tspan class="mut" ${SANS}> ${escapeXml(t.edits)}</tspan><tspan ${MONO}>   </tspan>`
+      : "";
+  return `<text x="${x}" y="134" font-size="11.5">${edits}${commits}</text>`;
+}
+
 export function renderHalf(data: CardData, theme: Theme, t: Strings): string {
   const W = 480;
   const H = 152;
@@ -71,7 +86,7 @@ export function renderHalf(data: CardData, theme: Theme, t: Strings): string {
   </a>
   <text class="txt" x="${PAD}" y="86" ${MONO} font-size="24" font-weight="700">${fmtCount(data.totalLines, t.dec)}<tspan class="mut" ${SANS} font-size="11.5" font-weight="400"> ${escapeXml(t.lines)}</tspan></text>
   ${miniBar(data, PAD, 100, W - PAD * 2, 10)}
-  <text x="${PAD}" y="134" font-size="11.5"><tspan class="txt" ${MONO} font-weight="700">${data.totalActions}</tspan><tspan class="mut" ${SANS}> ${escapeXml(t.edits)}</tspan><tspan ${MONO}> </tspan><tspan class="txt" ${MONO} font-weight="700">  ${data.totalCommits}</tspan><tspan class="mut" ${SANS}> ${escapeXml(t.commits)}</tspan></text>
+  ${statsRow(data, t, PAD)}
   ${flame(data, W - PAD - 44 - String(data.streak).length * 7, 129, 0.75)}
   <text x="${W - PAD}" y="134" text-anchor="end" font-size="11.5"><tspan class="txt" ${MONO} font-weight="700">${data.streak}</tspan><tspan class="mut" ${SANS}> ${escapeXml(t.dayStreak)}</tspan></text>
 </svg>`;
