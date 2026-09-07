@@ -1,5 +1,6 @@
 # devcard — a live, embeddable dev stats card powered by real AI-coding activity
 
+[![ci](https://github.com/augbastos/devcard/actions/workflows/ci.yml/badge.svg)](https://github.com/augbastos/devcard/actions/workflows/ci.yml)
 [![scpe](https://github.com/augbastos/devcard/actions/workflows/scpe.yml/badge.svg)](https://github.com/augbastos/devcard/actions/workflows/scpe.yml)
 [![scpe-seal](https://github.com/augbastos/devcard/actions/workflows/scpe-seal.yml/badge.svg)](https://github.com/augbastos/devcard/actions/workflows/scpe-seal.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -56,7 +57,7 @@ flowchart LR
 
 ## Deploy your own — one command
 
-You need: Python 3, Node 18+, git, and a free [Cloudflare account](https://dash.cloudflare.com/sign-up).
+You need: Python 3.9+, Node 18+, npm, git, and a free [Cloudflare account](https://dash.cloudflare.com/sign-up). The wizard checks all of them before it creates anything.
 
 ```bash
 git clone https://github.com/augbastos/devcard && cd devcard && python setup.py
@@ -79,11 +80,33 @@ Pick **one** capture mode per machine (both together would double-count the same
 
 The `git` mode hooks **git itself, not the agent** — that's why the compatibility list is "anything that commits", with zero per-tool integration code to maintain. It reads each commit's real `git diff --numstat` (lines and bytes per language), so the numbers are actual diff stats, not estimates.
 
-Install it into any repos you want tracked (appends safely to existing hooks like husky — nothing gets overwritten):
+Install it into any repos you want tracked:
 
 ```bash
-python hook/install_git_hook.py C:/path/to/your/projects
+python hook/install_git_hook.py "C:/path/to/your projects"    # a repo, or a folder of repos
+python hook/install_git_hook.py --uninstall "C:/path/to/your projects"
 ```
+
+Each path is one argument, so spaces are fine. A path may be a repository or a
+folder containing repositories (scanned one level deep, plus the folder
+itself).
+
+Where the hook goes is asked of git (`git rev-parse --git-path hooks/post-commit`)
+rather than assumed to be `.git/hooks/`, which means it also works for:
+
+- repos that set **`core.hooksPath`**;
+- **worktrees and submodules**, where `.git` is a file, not a directory (a repo
+  and its worktrees share one hooks directory, so it installs once);
+- **husky** — its runnable hooks live in `.husky/_`, which husky regenerates and
+  gitignores, so the line goes to `.husky/post-commit` where it survives the
+  next `npm install`.
+
+An existing hook is appended to, never overwritten, and installing twice is a
+no-op. If the existing `post-commit` is **not** a shell script (a Python or Ruby
+hook, say), the installer refuses to touch it and prints the line to add by
+hand — appending `sh` to a Python file would have broken the hook that was
+already there. `--uninstall` removes only devcard's line, and deletes the file
+only if devcard was all it contained.
 
 New agent hits the market tomorrow? If it commits to git, your card already supports it.
 
@@ -125,7 +148,20 @@ export DEVCARD_INGEST_TOKEN="<your-token>"
 
 ### 3. Point the hook at your Worker
 
-In `hook/devcard_lib.py`, set `WORKER_INGEST_URL` to `https://<your-worker-url>/ingest`.
+Write your Worker's ingest URL to `~/.claude/devcard/worker-url`:
+
+```bash
+# Windows (PowerShell)
+"https://<your-worker-url>/ingest" | Set-Content $HOME/.claude/devcard/worker-url
+# macOS/Linux
+echo "https://<your-worker-url>/ingest" > ~/.claude/devcard/worker-url
+```
+
+`DEVCARD_WORKER_URL` overrides the file if you prefer an environment variable.
+This used to be an edit to `WORKER_INGEST_URL` in `hook/devcard_lib.py`; it was
+moved out of tracked source so that `git clone && python setup.py` does not
+leave your personal endpoint sitting in a source file, ready to be committed or
+to conflict on the next `git pull`.
 
 ### 4. Register the hook in Claude Code
 
@@ -222,10 +258,12 @@ MIT licensed — fork it and make it yours. No framework, no build step for the 
 | Language, lines added/removed | ✅ | ✅ |
 | Event type, timestamp | ✅ | ✅ |
 | Repo **count** (a number) | ✅ | ✅ |
+| Random installation id (`source_id`) | ✅ | ✅ (stored, never rendered) |
 | Project names / paths | ✅ (never leaves) | ❌ no column exists |
 | File names, code content | ❌ never stored | ❌ |
+| Hostname, username, MAC address | ❌ never read | ❌ |
 
-The sync payload is built from a SQL projection that physically excludes project identifiers, and the public schema has nowhere to put them. Ingest is token-gated and idempotent.
+The sync payload is built from a SQL projection that physically excludes project identifiers, and the public schema has nowhere to put them. Ingest is token-gated and idempotent. The whole request body is three keys — `events`, `repo_count`, `source_id` — and the test suite asserts that on the serialized bytes, not on a comment.
 
 ### What the repo count actually counts
 
@@ -243,7 +281,30 @@ The card is designed so it can't be turned against its owner:
 - **Ingest is locked down.** `POST /ingest` requires a secret token, enforces strict schema validation (types, ranges, event-type whitelist), caps batch size (100 events) and body size (256 KB), and skips anything malformed instead of erroring.
 - **The public endpoint is read-only aggregate data.** `GET /svg` runs fixed, parameterized SQL over anonymous aggregates. The `user` parameter is only ever *compared* against your configured username — never used in a query or a fetch.
 - **Rendering is injection-safe.** Every dynamic string (badge labels, repo names, notes) is XML-escaped before entering the SVG; the SVG contains no scripts.
-- **Secrets never touch git.** The token lives in Wrangler's secret store + your env; `.dev.vars` is gitignored.
+- **Query parameters cannot reach an inherited property.** `?theme=`, `?lang=` and `?layout=` are resolved with own-property lookups, so `?theme=constructor` falls back to the default instead of resolving `Object.prototype.constructor` (which used to 500 the card).
+- **Secrets never touch git.** The token lives in Wrangler's secret store + your env; `.dev.vars` is gitignored, and on macOS/Linux the local token file is written `0600`.
+
+## Tests and CI
+
+```bash
+python -m unittest discover -s hook -p "test_*.py"   # hook + git integration
+cd worker && npm ci && npm run typecheck && npm test  # Worker, workerd + local D1
+```
+
+The Worker suite runs inside workerd against a real local D1 through
+[`@cloudflare/vitest-pool-workers`](https://developers.cloudflare.com/workers/testing/vitest-integration/),
+so ingest, the unique index, the cache key and the rollup rebuild are exercised
+by the same engine production uses. No Cloudflare account, secret or network
+access is involved; github.com is stubbed at the outbound boundary.
+
+The Python suite builds throwaway git repositories and runs real `git` against
+them — the merge and hook-installation behaviour it pins is behaviour of git,
+which a mock would only have agreed with.
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs both on every pull
+request and on `master`, with the hook suite on Python 3.9, 3.11 and 3.13. The
+`scpe` workflows next to it check that a pull request discloses AI use; they say
+nothing about whether the code works.
 
 ## Counting rules
 
@@ -257,9 +318,108 @@ rewrites one already counted.
 write counts the file. That is why the card says *lines written* rather than *lines of
 code*: it measures what a session produced, not the size of a codebase.
 
+### "code edits" is a claude-mode number
+
+The two modes do not produce a comparable *count of actions*. In `claude` mode
+one row is one agent tool call. In `git` mode one row is a per-commit,
+per-language aggregate — two commits touching Python and TypeScript make four
+rows, which is not "four edits" in any sense a reader would assume.
+
+So the card does not print one. Git-mode rows are stored under their own event
+type (`diff`), and the **`code edits` stat only appears on a card that has agent
+edits to report**; a git-captured card shows commits alone. Lines, bytes,
+languages, the heatmap and the streak are computed identically in both modes and
+are shown in both.
+
+### Merge commits
+
+A merge commit **counts as one commit and contributes no lines.**
+
+`git diff HEAD~1 HEAD` on a merge reports every line the merged branch brought
+in — lines already counted when each of those commits was made. Counting them
+again inflated the card by the whole size of every branch ever merged. This is
+also what `git diff-tree --cc` says: a clean merge introduces no content of its
+own.
+
+Related cases, for completeness:
+
+| Case | Counted as |
+|---|---|
+| Ordinary commit | its own diff against its parent |
+| Repository's first commit | its whole tree |
+| Merge commit (2+ parents) | one commit, zero lines |
+| Fast-forward merge | nothing — git creates no commit, so no hook runs |
+| Conflict resolution merge | one commit, zero lines |
+
+Two known limits, stated rather than hidden. A merge that resolves conflicts by
+hand can introduce genuinely new lines; those are not counted either, so that
+case under-reports by a few lines instead of over-reporting by a branch. And a
+**squash merge** produces an ordinary single-parent commit that is
+indistinguishable from hand-written work — it is counted in full, so if the
+squashed branch's own commits were also captured on this machine, those lines
+are counted twice.
+
+Most merges never reach the hook at all: git runs `post-merge`, not
+`post-commit`, when it creates the merge commit itself. The ones that do arrive
+are `--no-commit` merges and conflict resolutions, which end in an explicit
+`git commit`.
+
+### Event identity, and using two machines
+
+Each event carries the local SQLite rowid that produced it, and ingest ignores a
+row it has already stored — that is what makes a retried batch after a lost
+response count once instead of twice.
+
+A rowid alone is not a global identity, though: every install's sequence starts
+at 1. So each installation also generates a random, opaque `source_id` (16 bytes
+of `secrets.token_hex`, cached in `~/.claude/devcard/source-id`), and identity is
+the pair. That means:
+
+- **two machines can share one backend** — machine B's event 1 is no longer
+  mistaken for machine A's and silently dropped;
+- **deleting `~/.claude/devcard/events.db` is safe** — the restarted rowid
+  sequence continues in the same namespace instead of colliding with history;
+- retries stay idempotent, in `events` and in the rollups the card renders from.
+
+The `source_id` is random and carries no hostname, username, MAC address or
+path. It is never rendered on the card. Existing deployments upgrade with
+[`worker/migrations/0001_event_source_id.sql`](worker/migrations/0001_event_source_id.sql);
+rows and hooks that predate it keep their previous behaviour under a `legacy`
+namespace, and nothing is deleted or renumbered.
+
+**The namespace belongs to the event, not to the installation.** Each local row
+records the namespace it was queued under, and a batch may mix them. That is
+what makes upgrading safe: a hook that synced an event before it had an id — and
+never got the response back — re-sends that event as `legacy`, matching the row
+already in D1, while events captured after the upgrade go out under the new id
+in the same request. Without that, upgrading would have counted the whole
+un-acknowledged backlog twice.
+
+If an installation id cannot be created or read, the hook **sends nothing** and
+keeps the events for a later attempt, logging once locally. It deliberately does
+not fall back to `legacy`: that would look like success while quietly merging
+this machine's rowids with every other unidentified installation's. Capture is
+never blocked — events are still recorded, they simply wait.
+
 Ingest enforces plausibility server-side: events with impossible line counts,
 timestamps outside a sane window, or unknown types are rejected. The card's
 "tracking since" line shows how long the account has actually been measured.
+
+## Known limitations
+
+- **Squash merges can double-count** in `git` mode if the squashed branch's own
+  commits were captured on the same machine — a squash commit is
+  indistinguishable from hand-written work. See [Counting rules](#counting-rules).
+- **The two capture modes are exclusive per machine.** Running both would count
+  the same lines twice; `~/.claude/devcard/mode` is what keeps the git hook quiet
+  on a Claude Code machine.
+- **`worker/wrangler.toml` is edited by `setup.py`** with your `database_id` and
+  GitHub username. It is your fork's deployment config and is meant to be
+  committed there — but it does mean `git status` is not clean after setup.
+- **Raw events are never deleted.** Deliberate, and measured — see
+  [`docs/retention.md`](docs/retention.md).
+- **Links inside the card do not click** when it is embedded via `<img>`. A
+  browser limitation, shared by every stats card.
 
 ## Roadmap
 
