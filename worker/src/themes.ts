@@ -180,8 +180,23 @@ export const THEMES: Record<string, Theme> = {
   terminal: { base: TERMINAL },
 };
 
-export function pickTheme(name: string | null): Theme {
-  return (name && THEMES[name]) || THEMES.default;
+export const DEFAULT_THEME = "default";
+
+/** Canonical theme name for a `?theme=` value — the default when unknown.
+ *
+ * Own-property lookup, not `THEMES[name]`: a plain object inherits from
+ * `Object.prototype`, so `?theme=constructor` resolved to the `Object`
+ * function — truthy, no `.base`, and the render died with a 500 on the first
+ * token read. Same for `__proto__`, `toString`, `hasOwnProperty`. Returning
+ * the *name* (not just the theme) is what lets the cache key be keyed on the
+ * variant that was actually served.
+ */
+export function themeName(name: string | null | undefined): string {
+  return name && Object.prototype.hasOwnProperty.call(THEMES, name) ? name : DEFAULT_THEME;
+}
+
+export function pickTheme(name: string | null | undefined): Theme {
+  return THEMES[themeName(name)];
 }
 
 function tokenCss(k: Tokens): string {
