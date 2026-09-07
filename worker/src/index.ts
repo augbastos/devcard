@@ -1,5 +1,6 @@
 import { loadCardData, makeDayFn } from "./queries";
-import { pickTheme } from "./themes";
+import { STRINGS, cacheKeyFor, langName, layoutName } from "./variants";
+import { pickTheme, themeName } from "./themes";
 import { renderFull, Strings } from "./render";
 import { renderBanner, renderHalf, renderVertical } from "./render-layouts";
 
@@ -18,6 +19,11 @@ interface IngestEvent {
   lines_removed: number;
   bytes_added?: number;
   event_type: string;
+  /** Namespace this event was queued under, when it differs from the batch's.
+   *  A hook that upgraded across the source_id change carries a backlog that
+   *  was queued as `legacy`; re-sending it under the new installation id would
+   *  make the Worker see a different event and store it twice. */
+  source_id?: string;
 }
 
 export default {
@@ -121,7 +127,21 @@ const MAX_BODY_BYTES = 262144; // 256 KB
 const MAX_LINES_PER_EVENT = 20000;
 const MAX_BYTES_PER_EVENT = 10485760; // 10 MB — far beyond any plausible single edit
 const MAX_REPO_COUNT = 10000;
-const EVENT_TYPES = new Set(["edit", "write", "commit"]);
+
+// `edit`/`write` come from the Claude Code hook and count one agent tool call
+// each. `diff` comes from the git hook and is a per-commit, per-language
+// aggregate — a different unit entirely, which is why it is not called `edit`.
+// See "Counting rules" in the README.
+const EVENT_TYPES = new Set(["edit", "write", "commit", "diff"]);
+
+// Opaque, random, per-install. Deliberately narrow: it is written straight into
+// a column that participates in the idempotency key, and there is no reason for
+// it to hold anything but the hex token the hook generates.
+const SOURCE_ID_RE = /^[A-Za-z0-9_-]{4,64}$/;
+// What a row gets when the request carried no source_id: pre-migration rows and
+// hooks that predate the field. Keeping them in one namespace preserves their
+// original dedupe behaviour exactly.
+const LEGACY_SOURCE_ID = "legacy";
 
 function sanitizeEvent(e: unknown): IngestEvent | null {
   if (typeof e !== "object" || e === null) return null;
@@ -140,6 +160,13 @@ function sanitizeEvent(e: unknown): IngestEvent | null {
   if (id !== undefined && (typeof id !== "number" || !Number.isInteger(id) || id < 0)) return null;
   const ba = ev.bytes_added ?? 0;
   if (typeof ba !== "number" || !Number.isInteger(ba) || ba < 0 || ba > MAX_BYTES_PER_EVENT) return null;
+  // A malformed per-event namespace is skipped, never quietly relabelled onto
+  // the batch default: relabelling would move the event into a namespace where
+  // its rowid means something else.
+  const source = ev.source_id;
+  if (source !== undefined && source !== null && (typeof source !== "string" || !SOURCE_ID_RE.test(source))) {
+    return null;
+  }
   return {
     id: id as number | undefined,
     ts: Math.floor(ts),
@@ -148,6 +175,7 @@ function sanitizeEvent(e: unknown): IngestEvent | null {
     lines_removed: lr,
     bytes_added: ba,
     event_type: eventType,
+    source_id: (source as string | undefined) ?? undefined,
   };
 }
 
@@ -213,7 +241,7 @@ async function handleIngest(request: Request, env: Env): Promise<Response> {
     return new Response("payload too large", { status: 413 });
   }
 
-  let body: { events: unknown; repo_count?: unknown };
+  let body: { events: unknown; repo_count?: unknown; source_id?: unknown };
   try {
     body = JSON.parse(read.text);
   } catch {
@@ -227,6 +255,21 @@ async function handleIngest(request: Request, env: Env): Promise<Response> {
     return new Response("batch too large", { status: 400 });
   }
 
+  // The batch-level namespace is a DEFAULT, not the identity: an event may
+  // carry its own (see IngestEvent.source_id). Absent is fine — that is an
+  // older hook, and its events belong in the legacy namespace, which is exactly
+  // where they were already stored. Malformed is rejected rather than coerced,
+  // because coercing garbage onto `legacy` would let a broken client's rowids
+  // collide with real history.
+  const rawSource = body.source_id;
+  if (rawSource !== undefined && rawSource !== null && typeof rawSource !== "string") {
+    return new Response("bad source_id", { status: 400 });
+  }
+  if (typeof rawSource === "string" && !SOURCE_ID_RE.test(rawSource)) {
+    return new Response("bad source_id", { status: 400 });
+  }
+  const defaultSourceId = typeof rawSource === "string" ? rawSource : LEGACY_SOURCE_ID;
+
   const valid: IngestEvent[] = [];
   let skipped = 0;
   for (const raw of body.events) {
@@ -236,12 +279,21 @@ async function handleIngest(request: Request, env: Env): Promise<Response> {
   }
 
   // RETURNING is what makes the rollups below safe: an INSERT OR IGNORE that
-  // hits the client_event_id unique index returns no row, so a hook that
-  // re-sends a batch cannot double-count itself into the aggregates.
+  // hits the (source_id, client_event_id) unique index returns no row, so a
+  // hook that re-sends a batch cannot double-count itself into the aggregates.
   const statements = valid.map((e) =>
     env.DB.prepare(
-      "INSERT OR IGNORE INTO events (ts, language, lines_added, lines_removed, bytes_added, event_type, client_event_id) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id"
-    ).bind(e.ts, e.language, e.lines_added, e.lines_removed, e.bytes_added ?? 0, e.event_type, e.id ?? null)
+      "INSERT OR IGNORE INTO events (ts, language, lines_added, lines_removed, bytes_added, event_type, client_event_id, source_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id"
+    ).bind(
+      e.ts,
+      e.language,
+      e.lines_added,
+      e.lines_removed,
+      e.bytes_added ?? 0,
+      e.event_type,
+      e.id ?? null,
+      e.source_id ?? defaultSourceId
+    )
   );
 
   const rc = body.repo_count;
@@ -324,103 +376,52 @@ function rollupStatements(env: Env, landed: IngestEvent[]): D1PreparedStatement[
   return out;
 }
 
-const STRINGS: Record<string, Strings> = {
-  en: {
-    lines: "lines written",
-    edits: "code edits",
-    commits: "commits",
-    repos: "repos",
-    since: "tracking since",
-    events: "events",
-    dayStreak: "day streak",
-    streakAbbr: "d",
-    updatedAgo: "updated {X} ago",
-    dec: ".",
-    locale: "en",
-  },
-  pt: {
-    lines: "linhas escritas",
-    edits: "edições de código",
-    commits: "commits",
-    repos: "repos",
-    since: "medindo desde",
-    events: "eventos",
-    dayStreak: "dias seguidos",
-    streakAbbr: "d",
-    updatedAgo: "atualizado há {X}",
-    dec: ",",
-    locale: "pt",
-  },
-  es: {
-    lines: "líneas escritas",
-    edits: "ediciones de código",
-    commits: "commits",
-    repos: "repos",
-    since: "midiendo desde",
-    events: "eventos",
-    dayStreak: "días seguidos",
-    streakAbbr: "d",
-    updatedAgo: "actualizado hace {X}",
-    dec: ",",
-    locale: "es",
-  },
-};
-
-function pickLang(request: Request, url: URL): Strings {
-  const forced = url.searchParams.get("lang");
-  if (forced && STRINGS[forced]) return STRINGS[forced];
-  const header = (request.headers.get("Accept-Language") ?? "").toLowerCase();
-  for (const part of header.split(",")) {
-    const tag = part.split(";")[0].trim().split("-")[0];
-    if (STRINGS[tag]) return STRINGS[tag];
-  }
-  return STRINGS.en;
-}
-
-const LAYOUTS = new Set(["full", "banner", "half", "vertical"]);
-
-async function handleSvg(request: Request, env: Env): Promise<Response> {
-  const url = new URL(request.url);
-  const requestedUser = url.searchParams.get("user");
-  if (requestedUser && requestedUser !== env.GITHUB_USERNAME) {
-    return new Response("unknown user", { status: 404 });
-  }
-  const t = pickLang(request, url);
-  const theme = pickTheme(url.searchParams.get("theme"));
-  const layoutParam = url.searchParams.get("layout") ?? "full";
-  const layout = LAYOUTS.has(layoutParam) ? layoutParam : "full";
-
+async function handleSvg(env: Env, lang: string, theme: string, layout: string): Promise<Response> {
+  const t = STRINGS[lang];
+  const tokens = pickTheme(theme);
   const data = await loadCardData(env, t.locale);
 
   let svg: string;
-  if (layout === "banner") svg = renderBanner(data, theme, t);
-  else if (layout === "half") svg = renderHalf(data, theme, t);
-  else if (layout === "vertical") svg = renderVertical(data, theme, t);
-  else svg = renderFull(data, theme, t);
+  if (layout === "banner") svg = renderBanner(data, tokens, t);
+  else if (layout === "half") svg = renderHalf(data, tokens, t);
+  else if (layout === "vertical") svg = renderVertical(data, tokens, t);
+  else svg = renderFull(data, tokens, t);
 
   return new Response(svg, {
     headers: {
       "Content-Type": "image/svg+xml; charset=utf-8",
       "Cache-Control": "public, max-age=300, s-maxage=300",
+      // For caches downstream of this Worker (the browser, GitHub's image
+      // proxy, corporate proxies): the body genuinely depends on the header.
+      // This Worker's own cache does NOT rely on it — see cacheKeyFor.
       "Vary": "Accept-Language",
     },
   });
 }
 
-// Wraps handleSvg with the edge Cache API, keyed on the full request URL
-// (query params included, so ?theme=/?layout=/?lang= each get their own
-// entry). s-maxage was 30s, which had every embed revalidating ~2,880 times a
-// day per variant — GitHub's image proxy honours it, so a README that nobody
-// reloads still generated constant traffic. Five minutes is still live for a
-// card whose underlying hook writes in seconds.
+// s-maxage was 30s, which had every embed revalidating ~2,880 times a day per
+// variant — GitHub's image proxy honours it, so a README that nobody reloads
+// still generated constant traffic. Five minutes is still live for a card whose
+// underlying hook writes in seconds.
 async function handleSvgCached(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const url = new URL(request.url);
+  const requestedUser = url.searchParams.get("user");
+  if (requestedUser && requestedUser !== env.GITHUB_USERNAME) {
+    return new Response("unknown user", { status: 404 });
+  }
+
+  const lang = langName(request, url);
+  const theme = themeName(url.searchParams.get("theme"));
+  const layout = layoutName(url.searchParams.get("layout"));
+
   const cache = await caches.open("default");
-  const cached = await cache.match(request);
+  const cacheKey = cacheKeyFor(url, lang, theme, layout);
+  const cached = await cache.match(cacheKey);
   if (cached) return cached;
 
-  const response = await handleSvg(request, env);
+  const response = await handleSvg(env, lang, theme, layout);
   if (response.ok) {
-    ctx.waitUntil(cache.put(request, response.clone()));
+    ctx.waitUntil(cache.put(cacheKey, response.clone()));
   }
   return response;
 }
