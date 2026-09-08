@@ -1,9 +1,9 @@
 import { LANGUAGE_HOVER_CSS } from "./language-bar";
 
 // Theme system. `default` keeps the original behavior: light palette with an
-// automatic dark override via prefers-color-scheme. Named themes (dracula,
-// tokyonight) are deliberately single-look — their identity IS the palette,
-// so they don't get a light variant.
+// automatic dark override via prefers-color-scheme. The named themes (gentle,
+// cyberpunk, terminal, and the fixed dark/light pair) are deliberately
+// single-look — their identity IS the palette, so they get no second variant.
 
 export interface Tokens {
   bg: string;

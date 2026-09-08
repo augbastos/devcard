@@ -155,7 +155,7 @@ export function segIndex(url: URL): number {
 // image.
 //
 // Keying on the resolved (lang, theme, layout) instead bounds the cache at
-// 3 x 6 x 4 = 72 entries, one per card that can actually be rendered, and makes
+// 3 x 6 x 5 = 90 entries, one per card that can actually be rendered, and makes
 // the language separation a property of this code rather than of edge config.
 // `user` is deliberately absent: a wrong user 404s before we get here, and the
 // only accepted value renders identically to omitting it.
