@@ -324,7 +324,7 @@ def main():
         ok = False
         print(f"  warning: smoke test failed ({exc}) — check the steps above")
     if ok:
-        print("  pipeline verified end to end")
+        print("  ingest reachable and token accepted")
 
     print("\n" + "=" * 62)
     print("  Your card is live:")
