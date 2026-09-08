@@ -20,6 +20,7 @@ export const STRINGS: Record<string, Strings> = {
     streakAbbr: "d",
     updatedAgo: "updated {X} ago",
     dec: ".",
+    other: "other",
     locale: "en",
   },
   pt: {
@@ -33,6 +34,7 @@ export const STRINGS: Record<string, Strings> = {
     streakAbbr: "d",
     updatedAgo: "atualizado há {X}",
     dec: ",",
+    other: "outras",
     locale: "pt",
   },
   es: {
@@ -46,6 +48,7 @@ export const STRINGS: Record<string, Strings> = {
     streakAbbr: "d",
     updatedAgo: "actualizado hace {X}",
     dec: ",",
+    other: "otras",
     locale: "es",
   },
 };
@@ -90,7 +93,7 @@ export function langName(request: Request, url: URL): string {
 }
 
 export const DEFAULT_LAYOUT = "full";
-export const LAYOUTS = ["full", "banner", "half", "vertical"] as const;
+export const LAYOUTS = ["full", "wide", "banner", "half", "vertical"] as const;
 const LAYOUT_SET: ReadonlySet<string> = new Set(LAYOUTS);
 
 export function layoutName(name: string | null | undefined): string {
