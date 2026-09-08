@@ -100,6 +100,20 @@ export function layoutName(name: string | null | undefined): string {
   return name && LAYOUT_SET.has(name) ? name : DEFAULT_LAYOUT;
 }
 
+/** `?langs=all` makes the legend name every language instead of collapsing the
+ *  tail into one row.
+ *
+ * It exists because a GitHub README cannot deliver hover: `<object>`,
+ * `<iframe>`, inline `<svg>`, `<style>` and `<map>`/`<area>` are all stripped
+ * by GitHub's sanitizer, so no pointer event can reach inside the card. What
+ * GitHub does allow is `<details>` with an image inside — so the full
+ * breakdown can be a second, live render one click away, instead of a caption
+ * someone has to keep up to date by hand.
+ */
+export function langsAll(url: URL): boolean {
+  return url.searchParams.get("langs") === "all";
+}
+
 // The variant a request resolves to, as a cache key.
 //
 // The Cache API keys on the request URL, so the previous `cache.match(request)`
@@ -122,12 +136,22 @@ export function layoutName(name: string | null | undefined): string {
 // the language separation a property of this code rather than of edge config.
 // `user` is deliberately absent: a wrong user 404s before we get here, and the
 // only accepted value renders identically to omitting it.
-export function cacheKeyFor(url: URL, lang: string, theme: string, layout: string): Request {
+export function cacheKeyFor(
+  url: URL,
+  lang: string,
+  theme: string,
+  layout: string,
+  allLangs = false
+): Request {
   const key = new URL(url.origin);
   key.pathname = "/svg";
   key.searchParams.set("lang", lang);
   key.searchParams.set("theme", theme);
   key.searchParams.set("layout", layout);
+  // Part of the key because it changes the render. Leaving it out would serve
+  // the collapsed card to a request that asked for the full breakdown — the
+  // exact class of bug the resolved-variant key exists to prevent.
+  if (allLangs) key.searchParams.set("langs", "all");
   return new Request(key.toString(), { method: "GET" });
 }
 
