@@ -1,5 +1,5 @@
 import { loadCardData, makeDayFn } from "./queries";
-import { STRINGS, cacheKeyFor, langName, layoutName } from "./variants";
+import { STRINGS, cacheKeyFor, langName, layoutName, langsAll } from "./variants";
 import { pickTheme, themeName } from "./themes";
 import { renderFull, Strings } from "./render";
 import { renderBanner, renderHalf, renderVertical } from "./render-layouts";
@@ -377,17 +377,23 @@ function rollupStatements(env: Env, landed: IngestEvent[]): D1PreparedStatement[
   return out;
 }
 
-async function handleSvg(env: Env, lang: string, theme: string, layout: string): Promise<Response> {
+async function handleSvg(
+  env: Env,
+  lang: string,
+  theme: string,
+  layout: string,
+  allLangs: boolean
+): Promise<Response> {
   const t = STRINGS[lang];
   const tokens = pickTheme(theme);
   const data = await loadCardData(env, t.locale);
 
   let svg: string;
-  if (layout === "wide") svg = renderWide(data, tokens, t);
+  if (layout === "wide") svg = renderWide(data, tokens, t, allLangs);
   else if (layout === "banner") svg = renderBanner(data, tokens, t);
   else if (layout === "half") svg = renderHalf(data, tokens, t);
   else if (layout === "vertical") svg = renderVertical(data, tokens, t);
-  else svg = renderFull(data, tokens, t);
+  else svg = renderFull(data, tokens, t, allLangs);
 
   return new Response(svg, {
     headers: {
@@ -415,13 +421,14 @@ async function handleSvgCached(request: Request, env: Env, ctx: ExecutionContext
   const lang = langName(request, url);
   const theme = themeName(url.searchParams.get("theme"));
   const layout = layoutName(url.searchParams.get("layout"));
+  const allLangs = langsAll(url);
 
   const cache = await caches.open("default");
-  const cacheKey = cacheKeyFor(url, lang, theme, layout);
+  const cacheKey = cacheKeyFor(url, lang, theme, layout, allLangs);
   const cached = await cache.match(cacheKey);
   if (cached) return cached;
 
-  const response = await handleSvg(env, lang, theme, layout);
+  const response = await handleSvg(env, lang, theme, layout, allLangs);
   if (response.ok) {
     ctx.waitUntil(cache.put(cacheKey, response.clone()));
   }
