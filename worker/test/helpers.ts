@@ -31,14 +31,30 @@ export async function applySchema(db: D1Database, sql: string = schemaSql): Prom
 export async function purgeCardCache(): Promise<void> {
   const cache = await caches.open("default");
   const url = new URL("https://card.example/svg");
+  const keys: Request[] = [];
   for (const lang of Object.keys(STRINGS)) {
     for (const theme of Object.keys(THEMES)) {
       for (const layout of LAYOUTS) {
-        await cache.delete(cacheKeyFor(url, lang, theme, layout));
+        keys.push(cacheKeyFor(url, lang, theme, layout));
+        keys.push(cacheKeyFor(url, lang, theme, layout, true));
+      }
+      // The split card is many entries on one path — a body, two caps and a
+      // slice per language — and only `wide` is served that way. Leaving them
+      // behind would build a bar out of the previous test's data.
+      keys.push(cacheKeyFor(url, lang, theme, "wide", false, "body"));
+      keys.push(cacheKeyFor(url, lang, theme, "wide", false, "cap", "l"));
+      keys.push(cacheKeyFor(url, lang, theme, "wide", false, "cap", "r"));
+      for (let i = 0; i < SEG_KEYS; i++) {
+        keys.push(cacheKeyFor(url, lang, theme, "wide", false, "seg", "l", i));
       }
     }
   }
+  await Promise.all(keys.map((k) => cache.delete(k)));
 }
+
+/** How many bar slices the purge covers. More languages than this in a fixture
+ *  and a stale slice could survive into the next test. */
+const SEG_KEYS = 24;
 
 /** Fresh, empty schema and a cold cache for one test. Call in `beforeEach`. */
 export async function resetDb(): Promise<void> {
