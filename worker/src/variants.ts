@@ -101,17 +101,40 @@ export function layoutName(name: string | null | undefined): string {
 }
 
 /** `?langs=all` makes the legend name every language instead of collapsing the
- *  tail into one row.
- *
- * It exists because a GitHub README cannot deliver hover: `<object>`,
- * `<iframe>`, inline `<svg>`, `<style>` and `<map>`/`<area>` are all stripped
- * by GitHub's sanitizer, so no pointer event can reach inside the card. What
- * GitHub does allow is `<details>` with an image inside — so the full
- * breakdown can be a second, live render one click away, instead of a caption
- * someone has to keep up to date by hand.
- */
+ *  tail into one row. Useful when the card's URL is opened directly; an
+ *  embedded card reads better with the tail grouped. */
 export function langsAll(url: URL): boolean {
   return url.searchParams.get("langs") === "all";
+}
+
+/** `?part=` serves the card in pieces, which is the only way a README gets a
+ *  tooltip per language: an `<img>` carries one `title`, so the bar has to stop
+ *  being part of the same image as everything else. render-split.ts holds the
+ *  geometry and the measurements behind it.
+ *
+ * Only `layout=wide` is cut this way. A part asked of another layout, or an
+ * unknown value, falls back to the whole card rather than 404ing an embed
+ * someone has already pasted somewhere. */
+export const PARTS = ["body", "cap", "seg"] as const;
+export type Part = (typeof PARTS)[number];
+const PART_SET: ReadonlySet<string> = new Set(PARTS);
+
+export function partName(url: URL, layout: string): Part | null {
+  if (layout !== "wide") return null;
+  const raw = url.searchParams.get("part");
+  return raw && PART_SET.has(raw) ? (raw as Part) : null;
+}
+
+export function capSide(url: URL): "l" | "r" {
+  return url.searchParams.get("side") === "r" ? "r" : "l";
+}
+
+/** Which slice of the bar. Anything that is not a plausible index reads as 0;
+ *  an index past the end is the renderer's problem, and it draws an empty
+ *  slice — markup that has gone stale should thin out, not break. */
+export function segIndex(url: URL): number {
+  const raw = Number(url.searchParams.get("i"));
+  return Number.isInteger(raw) && raw >= 0 && raw < 1000 ? raw : 0;
 }
 
 // The variant a request resolves to, as a cache key.
@@ -141,7 +164,10 @@ export function cacheKeyFor(
   lang: string,
   theme: string,
   layout: string,
-  allLangs = false
+  allLangs = false,
+  part: Part | null = null,
+  side: "l" | "r" = "l",
+  index = 0
 ): Request {
   const key = new URL(url.origin);
   key.pathname = "/svg";
@@ -152,6 +178,14 @@ export function cacheKeyFor(
   // the collapsed card to a request that asked for the full breakdown — the
   // exact class of bug the resolved-variant key exists to prevent.
   if (allLangs) key.searchParams.set("langs", "all");
+  // Same reason, and it matters far more here: every slice of the bar is a
+  // request to the same path, so a key that ignored `part` would serve the
+  // whole card — or Python's slice — for all twenty of them.
+  if (part) {
+    key.searchParams.set("part", part);
+    if (part === "cap") key.searchParams.set("side", side);
+    if (part === "seg") key.searchParams.set("i", String(index));
+  }
   return new Request(key.toString(), { method: "GET" });
 }
 
