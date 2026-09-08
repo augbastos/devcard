@@ -10,7 +10,8 @@
 | Random installation id (`source_id`) | ✅ | ✅ (stored, never rendered) |
 | Project names / paths | ✅ (never leaves) | ❌ no column exists |
 | File names, code content | ❌ never stored | ❌ |
-| Hostname, username, MAC address | ❌ never read | ❌ |
+| Hostname, MAC address | ❌ never read | ❌ |
+| Username | only if it appears in a local path (above) | ❌ |
 
 The sync payload is built from a SQL projection that physically excludes project
 identifiers, and the public schema has nowhere to put them. Ingest is
@@ -22,8 +23,11 @@ bytes, not on a comment.
 
 It is the number of repositories you **own on GitHub** — public plus private —
 read locally through the `gh` CLI (already authenticated on your machine) and
-shipped as a single integer. No GitHub token ever goes near the Worker, and the
-number matches what the card's `N repos →` link resolves to.
+shipped as a single integer. No GitHub token ever goes near the Worker.
+
+Note that the count includes private repositories, while the card's
+`N repos →` link goes to your public profile — so a visitor following it sees
+only the public subset, and a smaller list than the number on the card.
 
 If `gh` isn't installed or the call fails, the card falls back to counting the
 distinct **git repository roots** you've worked in, resolved from the working
@@ -36,11 +40,10 @@ project would each register as "a repo" and inflate the number several-fold.
 
 ## Security model
 
-The card is designed so it can't be turned against its owner.
+The card is built to be boring to attack.
 
-- **No inbound surface on your machine.** The hook opens no ports and listens to
-  nothing — it only makes outbound HTTPS calls to *your* Worker. There is
-  nothing on your computer for an attacker to connect to.
+- **devcard adds no inbound surface.** The hook opens no ports and listens on
+  nothing — it only makes outbound HTTPS calls to *your* Worker.
 - **Ingest is locked down.** `POST /ingest` requires a secret token, enforces
   strict schema validation (types, ranges, event-type whitelist), caps batch
   size (100 events) and body size (256 KB), and skips anything malformed instead

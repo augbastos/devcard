@@ -1,7 +1,8 @@
 # Manual setup
 
-`python setup.py` does all of this in about two minutes. These are the same
-steps by hand, for when you want to see each one.
+`python setup.py` does all of this for you. These are the same steps by hand,
+for when you want to see each one. Most of the wizard's wall time is `npm ci`
+and the first Cloudflare deploy.
 
 ## 1. Clone and create your backend
 

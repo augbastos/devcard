@@ -18,17 +18,19 @@
 
 <p align="center"><em>↑ A real, live card. Point at the bar and it names the language under the pointer.</em></p>
 
-Tools like WakaTime measure how long your editor is focused. devcard measures
-something else: **what your AI coding sessions actually produced**. A tiny hook
-watches every edit on your machine, and your card updates in near real time —
-languages, volume, commits, activity — wherever it's embedded.
+WakaTime and friends are built around time spent coding. devcard is built
+around a different question: **what came out of the session**. A tiny hook
+records the edits your agent makes — or, for any other tool, each commit — and
+your card updates from there: languages, volume, commits, activity, wherever
+it's embedded.
 
 ## Why it's different
 
-- **Live, not batch.** The card reflects your latest session within seconds, not
-  "synced last night."
-- **Measures agent output.** It captures what you *ship* with an AI agent, which
-  keystroke timers can't see.
+- **Live, not batch.** Edits reach the backend within seconds of being made, and
+  the card is cached for five minutes — so a viewer sees your session at worst
+  five minutes old, not "synced last night."
+- **Measures agent output.** It counts what your agent actually wrote — the
+  edits, not the clock.
 - **Private by architecture, not by promise.** Project names, file paths and
   code content **never leave your machine** — there is no column in the public
   database where a filename could even be stored.
@@ -50,8 +52,9 @@ git clone https://github.com/augbastos/devcard && cd devcard && python setup.py
 ```
 
 It creates your D1 database, applies the schema, generates and stores your
-ingest token, deploys your Worker, installs the capture hook, runs an end-to-end
-smoke test, and prints your ready-to-paste embed. Two questions, ~2 minutes.
+ingest token, deploys your Worker, installs the capture hook, checks your token
+against the deployed Worker, and prints your ready-to-paste embed. Two questions
+in `claude` mode, three in `git` mode — it also asks where your repos live.
 
 Prefer to do it by hand? [Manual setup →](docs/manual-setup.md)
 
@@ -70,24 +73,27 @@ flowchart LR
 ```
 
 Events land in local SQLite first, so capture works offline and never blocks
-your session. Anonymized batches sync to a Cloudflare Worker + D1 — the free
-tier is plenty — and the Worker renders the SVG on demand.
+your session. Anonymized batches sync to a Cloudflare Worker + D1. Rollup
+tables mean one render reads about a hundred rows rather than one per event
+ever recorded, which is what keeps a card inside the free tier.
 
 ## Works with your agent
 
 Pick **one** capture mode per machine; running both would count the same lines
 twice.
 
-| Your tool | Mode | Granularity |
+| | Mode | Granularity |
 |---|---|---|
 | **Claude Code** | `claude` | Live, per-edit — the card moves while you code |
-| **Codex · Cursor · aider · Windsurf · Cline** | `git` | Per-commit, real diff stats |
-| **Local models** (Ollama, LM Studio, llama.cpp…) | `git` | Per-commit, real diff stats |
-| **Hand-typed code** | `git` | Per-commit, real diff stats |
+| **Anything that commits through git** | `git` | Per-commit, real diff stats |
 
-`git` mode hooks **git itself, not the agent** — which is why the list is
-"anything that commits", with no per-tool integration to maintain. New agent
-ships tomorrow? If it commits, your card already supports it.
+…which in practice means Codex, Cursor, aider, Windsurf, Cline, a local model
+through Ollama or LM Studio, or your own hands.
+
+`git` mode hooks **git itself, not the agent**, so there is no per-tool
+integration to maintain and a new agent needs no work at all. The one gap is a
+client that writes commits without invoking git — some GUIs built on libgit2 —
+which never fires the hook.
 
 ```bash
 python hook/install_git_hook.py "C:/path/to/your projects"   # a repo, or a folder of repos
@@ -114,7 +120,7 @@ paste that line into its README.
 | `wide` | 840×~430 | The same, laid across a README's full column — legend in columns, bigger heatmap, pinned repos beside it |
 | `banner` | 480×72 | One-line strip for forum sigs and tight READMEs |
 | `half` | 480×152 | Header, lines, language bar, stats row |
-| `vertical` | 280×~290 | Narrow column for site and blog sidebars |
+| `vertical` | 280×264 | Narrow column for site and blog sidebars |
 
 **Themes** (`?theme=`): `default` (follows the viewer's system theme) · `dark` ·
 `light` · `gentle` · `cyberpunk` · `terminal`.
@@ -186,6 +192,9 @@ hook suite on Python 3.9, 3.11 and 3.13.
 
 - **Squash merges can double-count** in `git` mode if the squashed branch's own
   commits were captured on the same machine.
+- **`git commit --amend` double-counts** in `git` mode: `post-commit` runs
+  again and the amended commit's whole diff is read a second time. `claude`
+  mode does filter it.
 - **The two capture modes are exclusive per machine.**
   `~/.claude/devcard/mode` is what keeps the git hook quiet on a Claude Code
   machine.
@@ -193,8 +202,9 @@ hook suite on Python 3.9, 3.11 and 3.13.
   deployment config and belongs committed there, but `git status` isn't clean
   after setup.
 - **Raw events are never deleted** — deliberate, and measured.
-- **Links inside the card don't click** when embedded via `<img>`. A browser
-  limitation shared by every stats card.
+- **Links inside the card don't click** when embedded via `<img>` — a browser
+  limitation of anything loaded that way. Wrapping the image in a link makes
+  the whole card clickable, if that is enough.
 
 ## Going deeper
 

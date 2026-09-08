@@ -21,7 +21,8 @@ another way.
 GitHub renders an embed through an `<img>`, and browsers put SVG-in-`<img>` in
 secure static mode: no pointer event reaches the document. Every element that
 could carry the interaction instead is removed by GitHub's HTML sanitizer —
-measured against GitHub's own markdown renderer, not assumed:
+measured against GitHub's rendered markdown in September 2026, not assumed.
+GitHub's sanitizer and CSS are not a contract, so this is a snapshot:
 
 | | in a README |
 |---|---|
@@ -66,11 +67,12 @@ imprecise.
 ## The price
 
 Each slice is floored at 4px, paid for out of the segments that have pixels to
-spare. Without it, on a real account, eight languages sit under a pixel and
-three under a tenth of one: a bar that draws them honestly draws them invisible,
-and nothing can point at 0.03px. The percentage in each tooltip is the true
-share; only the pixels move. On the card in this repository's README, the
-largest language gives up about 1.2 points of the card's width for it.
+spare. Measured on the card in this repository's README: seven of its eighteen
+languages draw thinner than that floor, five of them under a single pixel and
+two under a tenth of one — Java at 0.09px, Ruby at 0.007px. A bar that draws
+them honestly draws them invisible, and nothing can point at 0.007px. The
+percentage in each tooltip is still the true share; only the pixels move, and
+the largest language gives up around a point of the card's width to pay for it.
 
 The single-image embed is still exactly proportional, and still works
 everywhere. It just cannot hover.

@@ -3,13 +3,16 @@
 Two capture modes, counting different things on purpose.
 
 **`git` mode** reads `git diff --numstat` per commit, so a line is a real net
-change. Commits count invocations that produce a commit; `--amend` is excluded,
-because it rewrites one already counted.
+change. One caveat: `git commit --amend` fires `post-commit` again, and the
+amended commit's whole diff is read a second time, so an amend-heavy workflow
+over-reports. The same class of gap as squash merges, below.
 
 **`claude` mode** counts written output — an edit counts the region it replaced,
 a write counts the file. That is why the card says *lines written* rather than
 *lines of code*: it measures what a session produced, not the size of a
-codebase.
+codebase. Commits here are counted from the agent's own `git commit`
+invocations, and `--amend` *is* excluded, because it rewrites one already
+counted.
 
 ## "code edits" is a claude-mode number
 
