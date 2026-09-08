@@ -1,11 +1,21 @@
 // Alternate embed layouts: banner (480×72), half (480×~150), vertical (280).
 
-import { CardData } from "./queries";
+import { CardData, withOtherBucket, NAMED_LANGUAGES } from "./queries";
 import { Theme, cssFor } from "./themes";
-import { MONO, SANS, LANGUAGE_COLORS, FLAME_ICON, escapeXml, fmtCount, truncate, pick } from "./svg-utils";
+import {
+  MONO,
+  SANS,
+  FLAME_ICON,
+  escapeXml,
+  fmtCount,
+  truncate,
+  sliceColor,
+  sliceLabel,
+  sliceTitle,
+} from "./svg-utils";
 import { Strings } from "./render";
 
-function miniBar(data: CardData, x0: number, y: number, width: number, height: number): string {
+function miniBar(data: CardData, x0: number, y: number, width: number, height: number, other = "other"): string {
   if (data.totalLines <= 0) return `<rect class="track" x="${x0}" y="${y}" width="${width}" height="${height}" rx="${height / 2}"/>`;
   let x = x0;
   const parts: string[] = [
@@ -13,11 +23,10 @@ function miniBar(data: CardData, x0: number, y: number, width: number, height: n
     `<rect class="track" x="${x0}" y="${y}" width="${width}" height="${height}" rx="${height / 2}"/>`,
     `<g clip-path="url(#minibar)">`,
   ];
-  for (const lang of data.languages) {
+  for (const lang of withOtherBucket(data.languages, NAMED_LANGUAGES)) {
     const w = (lang.total / data.totalLines) * width;
-    const color = pick(LANGUAGE_COLORS, lang.language) ?? "#8b93a3";
     parts.push(
-      `<rect x="${x.toFixed(2)}" y="${y}" width="${w.toFixed(2)}" height="${height}" fill="${color}"><title>${escapeXml(lang.language)}</title></rect>`
+      `<rect x="${x.toFixed(2)}" y="${y}" width="${w.toFixed(2)}" height="${height}" fill="${sliceColor(lang)}"><title>${escapeXml(sliceTitle(lang, other))}</title></rect>`
     );
     x += w;
   }
@@ -95,17 +104,16 @@ export function renderHalf(data: CardData, theme: Theme, t: Strings): string {
 export function renderVertical(data: CardData, theme: Theme, t: Strings): string {
   const W = 280;
   const PAD = 18;
-  const topLangs = data.languages.slice(0, 3);
+  const topLangs = withOtherBucket(data.languages, NAMED_LANGUAGES).slice(0, 3);
   const legendTop = 158;
   const rowH = 20;
   const legend = topLangs
     .map((lang, i) => {
       const pct = data.totalLines > 0 ? ((lang.total / data.totalLines) * 100).toFixed(1) : "0.0";
       const y = legendTop + i * rowH;
-      const color = pick(LANGUAGE_COLORS, lang.language) ?? "#8b93a3";
       return (
-        `<circle cx="${PAD + 5}" cy="${y - 4}" r="4" fill="${color}"/>` +
-        `<text class="txt" x="${PAD + 16}" y="${y}" ${SANS} font-size="12">${escapeXml(truncate(lang.language, 14))}</text>` +
+        `<circle cx="${PAD + 5}" cy="${y - 4}" r="4" fill="${sliceColor(lang)}"/>` +
+        `<text class="txt" x="${PAD + 16}" y="${y}" ${SANS} font-size="12">${escapeXml(truncate(sliceLabel(lang, t.other), 14))}</text>` +
         `<text class="mut" x="${W - PAD}" y="${y}" ${MONO} font-size="11" text-anchor="end">${pct}%</text>`
       );
     })

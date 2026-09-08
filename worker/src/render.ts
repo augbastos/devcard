@@ -1,11 +1,11 @@
 // Full card layout (the default). Receives data + theme + strings; pure.
 
-import { CardData } from "./queries";
+import { CardData, withOtherBucket, NAMED_LANGUAGES } from "./queries";
+import { languageBarSegments, languageBarHover, BarGeometry } from "./language-bar";
 import { Theme, cssFor } from "./themes";
 import {
   MONO,
   SANS,
-  LANGUAGE_COLORS,
   KIND_ICONS,
   HEART_ICON,
   REPO_ICON,
@@ -16,6 +16,8 @@ import {
   fmtBytes,
   fmtAge,
   pick,
+  sliceColor,
+  sliceLabel,
 } from "./svg-utils";
 
 export interface Strings {
@@ -29,6 +31,7 @@ export interface Strings {
   streakAbbr: string; // ultra-short suffix for the banner layout
   updatedAgo: string; // contains {X}
   dec: string;
+  other: string; // label for the collapsed language slice
   locale: string; // for month names
 }
 
@@ -79,38 +82,36 @@ export function renderFull(data: CardData, theme: Theme, t: Strings): string {
   const barY = 130;
   const barH = 12;
   const barW = W - PAD * 2;
-  let x = PAD;
-  const segs: string[] = [];
-  const seps: string[] = [];
-  for (const lang of data.languages) {
-    const w = data.totalLines > 0 ? (lang.total / data.totalLines) * barW : 0;
-    const color = pick(LANGUAGE_COLORS, lang.language) ?? "#8b93a3";
-    segs.push(
-      `<rect x="${x.toFixed(2)}" y="${barY}" width="${w.toFixed(2)}" height="${barH}" fill="${color}"><title>${escapeXml(lang.language)}</title></rect>`
-    );
-    x += w;
-    if (x < PAD + barW - 1) seps.push(`<rect class="sep" x="${(x - 1).toFixed(2)}" y="${barY}" width="2" height="${barH}"/>`);
-  }
+  // The bar keeps every language, so the thin ones stay on screen and stay
+  // pointable; the legend collapses the tail so it reads at a glance. The two
+  // are allowed to differ here precisely because hovering names what the
+  // legend groups.
+  const legendSlices = withOtherBucket(data.languages, NAMED_LANGUAGES);
+  const slices = data.languages;
+  const barGeo: BarGeometry = {
+    x: PAD, y: barY, width: barW, height: barH, clampLeft: PAD, clampRight: W - PAD,
+  };
 
   // -- legend --
+  // Every slice in the bar is also in the legend — `withOtherBucket` already
+  // capped the list, so there is no `slice()` here and nothing can go unnamed.
   const legendTop = 172;
   const rowH = 21;
+  const perColumn = Math.ceil(legendSlices.length / 2) || 1;
   const colX = [PAD, PAD + barW / 2 + 8];
-  const legend = data.languages
-    .slice(0, 6)
+  const legend = legendSlices
     .map((lang, i) => {
       const pct = data.totalLines > 0 ? ((lang.total / data.totalLines) * 100).toFixed(1) : "0.0";
-      const cx = colX[Math.floor(i / 3)];
-      const y = legendTop + (i % 3) * rowH;
-      const color = pick(LANGUAGE_COLORS, lang.language) ?? "#8b93a3";
+      const cx = colX[Math.floor(i / perColumn)] ?? colX[1];
+      const y = legendTop + (i % perColumn) * rowH;
       return (
-        `<circle cx="${cx + 5}" cy="${y - 4}" r="4.5" fill="${color}"/>` +
-        `<text class="txt" x="${cx + 17}" y="${y}" ${SANS} font-size="12.5">${escapeXml(lang.language)}` +
+        `<circle cx="${cx + 5}" cy="${y - 4}" r="4.5" fill="${sliceColor(lang)}"/>` +
+        `<text class="txt" x="${cx + 17}" y="${y}" ${SANS} font-size="12.5">${escapeXml(truncate(sliceLabel(lang, t.other), 16))}` +
         `<tspan class="mut" ${MONO} font-size="11.5"> ${pct}%</tspan></text>`
       );
     })
     .join("\n  ");
-  const legendBottom = data.languages.length === 0 ? legendTop : legendTop + (Math.min(data.languages.length, 3) - 1) * rowH;
+  const legendBottom = legendSlices.length === 0 ? legendTop : legendTop + (perColumn - 1) * rowH;
 
   // -- heatmap (centered) --
   const heatTop = legendBottom + 18;
@@ -229,12 +230,7 @@ export function renderFull(data: CardData, theme: Theme, t: Strings): string {
   <text class="txt" x="${PAD}" y="106" ${MONO} font-size="30" font-weight="700">${fmtCount(data.totalLines, t.dec)}<tspan class="mut" ${SANS} font-size="12" font-weight="400"> ${escapeXml(t.lines)}</tspan><tspan class="faint" ${MONO} font-size="11" font-weight="400"> (${fmtBytes(data.totalBytes, t.dec)})</tspan></text>
   ${streakBlock(data, t, W - PAD, 106)}
 
-  <clipPath id="barclip"><rect x="${PAD}" y="${barY}" width="${barW}" height="${barH}" rx="6"/></clipPath>
-  <rect class="track" x="${PAD}" y="${barY}" width="${barW}" height="${barH}" rx="6"/>
-  <g clip-path="url(#barclip)">
-    ${segs.join("\n    ")}
-    ${seps.join("\n    ")}
-  </g>
+  ${languageBarSegments(slices, data.totalLines, barGeo, "barclip")}
 
   ${legend}
 
@@ -246,5 +242,6 @@ export function renderFull(data: CardData, theme: Theme, t: Strings): string {
   ${footer}
   ${provenanceLine}
   ${pills}
+  ${languageBarHover(slices, data.totalLines, barGeo, t.other)}
 </svg>`;
 }

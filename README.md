@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <img src="https://card.devcard.workers.dev/svg?user=augbastos&amp;theme=default" alt="devcard — live example" />
+  <img src="https://card.devcard.workers.dev/svg?user=augbastos&amp;layout=wide&amp;theme=default" alt="devcard — live example" />
 </p>
 
 <p align="center"><em>↑ This is a real, live card. It updates within seconds of its owner writing code.</em></p>
@@ -211,6 +211,7 @@ Mix and match with query params — every combination is a valid embed:
 | Value | Size | What you get |
 |---|---|---|
 | `full` (default) | 480×tall | Everything: avatar, streak flame, language bar + legend, 16-week contribution heatmap, pinned repos, stats, badges |
+| `wide` | 840×~430 | The same content laid out across a README's full column width — legend in three columns, larger heatmap, pinned repos and badges beside it rather than below |
 | `banner` | 480×72 | One-line strip: avatar, @user, lines, streak, mini language bar — for forum sigs and tight READMEs |
 | `half` | 480×152 | Header + lines + language bar + stats row |
 | `vertical` | 280×~290 | Narrow column for site/blog sidebars |
@@ -218,6 +219,25 @@ Mix and match with query params — every combination is a valid embed:
 **Themes** (`?theme=`): `default` (follows the viewer's light/dark system theme) · `dark` · `light` · `gentle` (soft rosé/lilac) · `cyberpunk` (neon noir) · `terminal` (green-phosphor CRT).
 
 The heatmap paints real per-day output (intensity relative to your own p90, so one huge day doesn't flatten the rest), the flame lights up at a 7+ day streak, and the footer shows "updated Xmin ago" — a live card that can prove it's live. Day boundaries use the `TIMEZONE` var in `wrangler.toml`.
+
+### The language bar, and its long tail
+
+The bar draws every language to exact proportion, which on a real account means
+a tail thinner than a pixel — measured on this card: Shell 0.65px, C++ 0.55px,
+Java 0.05px, Ruby 0.00px. Nothing is dropped or padded, so the picture stays
+honest, and the legend below collapses the tail into one `other` row rather than
+listing rows of 0.0%.
+
+To make those slivers identifiable, an invisible hover layer sits over the bar.
+Every language gets a target at least 3px wide — paid for out of the segments
+that have pixels to spare, so the targets tile the bar exactly and never
+overlap — and pointing at one shows its name and share.
+
+**That hover does not work in a GitHub README**, and cannot: GitHub serves the
+card through an `<img>`, and browsers render SVG-in-`<img>` in secure static
+mode, where no pointer event reaches the document. It works when the SVG is a
+document — open the card's URL directly, or embed it somewhere you control the
+markup with `<object data="…" type="image/svg+xml">`.
 
 ## Badges, certifications, awards
 

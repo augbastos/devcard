@@ -16,6 +16,21 @@ What "public API" means for devcard, since it is not a library:
 
 ### Added
 
+- **A `wide` layout** (`?layout=wide`, 840×~430) that lays the card across a
+  README's full column instead of using half of it: legend in three columns,
+  larger heatmap, pinned repos and badges beside it rather than below. Type
+  sizes are the ones `full` uses — this is a different layout, not the same one
+  scaled up.
+- **A hover layer over the language bar.** The bar's tail is genuinely
+  sub-pixel on a real account (Java 0.05px, Ruby 0.00px), so an invisible layer
+  gives every language a target of at least 3px, taken from the segments that
+  have pixels to spare so the targets tile the bar exactly and never overlap.
+  Pointing at one names it and shows its share. It works wherever the SVG is a
+  document; a GitHub README embeds it through an `<img>`, where browsers deliver
+  no pointer events at all.
+- **An `other` row in the legend**, collapsing the languages past the sixth so
+  the legend stays short. The bar itself still draws every language.
+
 - **Global event identity.** Every installation generates a random, opaque
   `source_id`; D1 dedupes on `(source_id, client_event_id)` instead of the local
   rowid alone. Two machines can now share one backend, and deleting the local
@@ -67,6 +82,9 @@ What "public API" means for devcard, since it is not a library:
   space was silently discarded. Folders are now entered one per line.
 - **Deleted files donated their added bytes to the next file** in the git
   hook's patch parser.
+- **Heatmap month labels overlapped into "MayJun"** when two months started in
+  consecutive weeks. A label is now skipped if it would land within three weeks
+  of the previous one.
 - Local `devcard_lib` paths are resolved from the module at call time rather
   than captured as default arguments — patching them in a test used to do
   nothing, so a test run could write into the real `events.db`.

@@ -3,6 +3,7 @@ import { STRINGS, cacheKeyFor, langName, layoutName } from "./variants";
 import { pickTheme, themeName } from "./themes";
 import { renderFull, Strings } from "./render";
 import { renderBanner, renderHalf, renderVertical } from "./render-layouts";
+import { renderWide } from "./render-wide";
 
 export interface Env {
   DB: D1Database;
@@ -382,7 +383,8 @@ async function handleSvg(env: Env, lang: string, theme: string, layout: string):
   const data = await loadCardData(env, t.locale);
 
   let svg: string;
-  if (layout === "banner") svg = renderBanner(data, tokens, t);
+  if (layout === "wide") svg = renderWide(data, tokens, t);
+  else if (layout === "banner") svg = renderBanner(data, tokens, t);
   else if (layout === "half") svg = renderHalf(data, tokens, t);
   else if (layout === "vertical") svg = renderVertical(data, tokens, t);
   else svg = renderFull(data, tokens, t);
