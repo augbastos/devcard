@@ -47,10 +47,11 @@ export const CORNER = 14;
  *
  * Unlike the in-card hover layer, here the target *is* the visible segment, so
  * a floor costs real proportion rather than nothing. Four pixels is the price
- * of a language existing on the card at all: on this account eight languages
- * sit under 1px and three under a tenth of one, and a bar that draws them
- * honestly draws them invisible. The floor is paid for out of the segments
- * that have pixels to spare, so the row still tiles the bar exactly.
+ * of a language existing on the card at all: measured on a real account, seven
+ * of eighteen languages draw under 4px, five under a single pixel and two under
+ * a tenth of one — a bar that draws them honestly draws them invisible. The
+ * floor is paid for out of the segments that have pixels to spare, so the row
+ * still tiles the bar exactly.
  */
 export const MIN_SEG = 4;
 

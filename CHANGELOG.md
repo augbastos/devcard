@@ -26,16 +26,25 @@ What "public API" means for devcard, since it is not a library:
   gives every language a target of at least 3px, taken from the segments that
   have pixels to spare so the targets tile the bar exactly and never overlap.
   Pointing at one names it and shows its share. It works wherever the SVG is a
-  document; a GitHub README embeds it through an `<img>`, where browsers deliver
-  no pointer events at all.
+  document — the card's URL opened directly, or an `<object>` embed.
 - **An `other` row in the legend**, collapsing the languages past the sixth so
   the legend stays short. The bar itself still draws every language.
-- **`?langs=all`**, which names every language in the legend. A GitHub README
-  cannot deliver hover — `<object>`, `<iframe>`, inline `<svg>`, `<style>` and
-  `<map>`/`<area>` are all removed by its sanitizer, so nothing can carry a
-  pointer event into the card. `<details>` and `title` do survive, so the
-  README pairs a `title` tooltip with an expandable second render that names
-  everything. It stays live instead of being a hand-maintained caption.
+- **`?langs=all`**, which names every language in the legend instead of
+  collapsing the tail. Useful when the card's URL is opened directly.
+- **`?part=` — the card served in pieces, so a GitHub README can hover one
+  language.** A README embeds through an `<img>`, where browsers deliver no
+  pointer events into the SVG, and GitHub's sanitizer removes `<object>`,
+  `<iframe>`, inline `<svg>`, `<style>` and `<map>`/`<area>`. A `title` on an
+  `<img>` does survive, but names a whole image — so the bar stops being part of
+  the same image as the rest of the card: a body, two end caps and one slice per
+  language, tiled into a row with a `title` each. The bar is the card's last row
+  because a paragraph's 24px line box would otherwise leave a gap inside the
+  card. Slices are floored at 4px, paid for out of the segments with pixels to
+  spare; the percentage in each tooltip is still the true share.
+- **`GET /embed`**, which returns that block ready to paste, and
+  `scripts/refresh_readme.py` with a weekly workflow to regenerate it — the
+  widths and tooltip text are HTML attributes, so they live in the README and
+  cannot follow the data on their own.
 
 - **Global event identity.** Every installation generates a random, opaque
   `source_id`; D1 dedupes on `(source_id, client_event_id)` instead of the local
@@ -109,6 +118,10 @@ What "public API" means for devcard, since it is not a library:
 
 ### Changed
 
+- **The README is 216 lines instead of 524.** The reference material it had
+  accumulated — counting rules, the privacy and security model, the GitHub
+  hover measurements, the manual setup steps — moved to `docs/` under their own
+  headings, linked from a short index. Nothing was dropped.
 - **`code edits` is now a claude-mode-only stat.** Git-mode rows are stored
   under a new `diff` event type instead of sharing `edit`, because one is an
   agent tool call and the other a per-commit, per-language aggregate. A
