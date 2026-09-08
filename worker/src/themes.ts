@@ -1,3 +1,5 @@
+import { LANGUAGE_HOVER_CSS } from "./language-bar";
+
 // Theme system. `default` keeps the original behavior: light palette with an
 // automatic dark override via prefers-color-scheme. Named themes (dracula,
 // tokyonight) are deliberately single-look — their identity IS the palette,
@@ -205,6 +207,7 @@ function tokenCss(k: Tokens): string {
     `.track{fill:${k.track}}.sep{fill:${k.sep}}` +
     `.pill{fill:${k.pill};stroke:${k.pillStroke}}.pill-sp{fill:${k.pillSp};stroke:${k.pillSpStroke}}.heart{fill:${k.heart}}` +
     `.link{fill:${k.link}}.avbrd{stroke:${k.avbrd}}.accent{fill:${k.accent}}.live{fill:${k.live}}` +
+    `.tipbg{fill:${k.pill};stroke:${k.pillStroke}}.tiptx{fill:${k.txt}}` +
     k.heat.map((c, i) => `.heat${i}{fill:${c}}`).join("")
   );
 }
@@ -214,5 +217,6 @@ export function cssFor(theme: Theme): string {
   if (theme.dark) {
     css += `@media(prefers-color-scheme:dark){${tokenCss(theme.dark)}}`;
   }
-  return css;
+  // Behaviour, not palette: appended once, after both token sets.
+  return css + LANGUAGE_HOVER_CSS;
 }
