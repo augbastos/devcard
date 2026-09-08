@@ -1,9 +1,20 @@
 import { loadCardData, makeDayFn } from "./queries";
-import { STRINGS, cacheKeyFor, langName, layoutName, langsAll } from "./variants";
+import {
+  STRINGS,
+  cacheKeyFor,
+  langName,
+  layoutName,
+  langsAll,
+  partName,
+  capSide,
+  segIndex,
+  Part,
+} from "./variants";
 import { pickTheme, themeName } from "./themes";
 import { renderFull, Strings } from "./render";
 import { renderBanner, renderHalf, renderVertical } from "./render-layouts";
 import { renderWide } from "./render-wide";
+import { stripLayout, renderStripCap, renderStripSegment, embedHtml } from "./render-split";
 
 export interface Env {
   DB: D1Database;
@@ -44,6 +55,12 @@ export default {
         : request;
       const response = await handleSvgCached(getRequest, env, ctx);
       return isHead ? new Response(null, { status: response.status, headers: response.headers }) : response;
+    }
+    // The markup for a hoverable card. The widths and the tooltip text have to
+    // live in the README — a `title` is an HTML attribute, not something the
+    // image can carry — so this is what regenerates them from live data.
+    if (request.method === "GET" && url.pathname === "/embed") {
+      return handleEmbed(request, env, url);
     }
     return new Response("not found", { status: 404 });
   },
@@ -377,19 +394,73 @@ function rollupStatements(env: Env, landed: IngestEvent[]): D1PreparedStatement[
   return out;
 }
 
+async function handleEmbed(request: Request, env: Env, url: URL): Promise<Response> {
+  const requestedUser = url.searchParams.get("user");
+  if (requestedUser && requestedUser !== env.GITHUB_USERNAME) {
+    return new Response("unknown user", { status: 404 });
+  }
+  const lang = langName(request, url);
+  const theme = themeName(url.searchParams.get("theme"));
+  const t = STRINGS[lang];
+  const data = await loadCardData(env, t.locale);
+  const strip = stripLayout(data.languages, data.totalLines);
+  const html = embedHtml(data, strip, url.origin, env.GITHUB_USERNAME, theme, t.other);
+  return new Response(html + "\n", {
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      // Short: this is read by a scheduled job, not by a page, and a stale
+      // answer would be baked into someone's README until the next run.
+      "Cache-Control": "public, max-age=60",
+    },
+  });
+}
+
+/** One piece of the split `wide` card — see render-split.ts.
+ *
+ * An index past the end of the bar renders an empty slice rather than a 404:
+ * the widths and the slice count live in whatever markup someone pasted, so a
+ * README that has gone stale should thin out quietly, not sprout broken-image
+ * boxes across the bar.
+ */
+function renderPart(
+  data: Awaited<ReturnType<typeof loadCardData>>,
+  tokens: ReturnType<typeof pickTheme>,
+  t: Strings,
+  allLangs: boolean,
+  part: Part,
+  side: "l" | "r",
+  index: number
+): string {
+  if (part === "body") return renderWide(data, tokens, t, allLangs, true);
+
+  const strip = stripLayout(data.languages, data.totalLines);
+  if (part === "cap") {
+    return renderStripCap(tokens, side, side === "l" ? strip.capLeftPct : strip.capRightPct);
+  }
+
+  const slot = strip.slots[index] ?? null;
+  const last = strip.slots.length - 1;
+  const end = strip.slots.length === 1 ? "both" : index === 0 ? "l" : index === last ? "r" : null;
+  return renderStripSegment(tokens, slot, slot ? end : null, slot ? slot.width : 1);
+}
+
 async function handleSvg(
   env: Env,
   lang: string,
   theme: string,
   layout: string,
-  allLangs: boolean
+  allLangs: boolean,
+  part: Part | null = null,
+  side: "l" | "r" = "l",
+  index = 0
 ): Promise<Response> {
   const t = STRINGS[lang];
   const tokens = pickTheme(theme);
   const data = await loadCardData(env, t.locale);
 
   let svg: string;
-  if (layout === "wide") svg = renderWide(data, tokens, t, allLangs);
+  if (part) svg = renderPart(data, tokens, t, allLangs, part, side, index);
+  else if (layout === "wide") svg = renderWide(data, tokens, t, allLangs);
   else if (layout === "banner") svg = renderBanner(data, tokens, t);
   else if (layout === "half") svg = renderHalf(data, tokens, t);
   else if (layout === "vertical") svg = renderVertical(data, tokens, t);
@@ -422,13 +493,16 @@ async function handleSvgCached(request: Request, env: Env, ctx: ExecutionContext
   const theme = themeName(url.searchParams.get("theme"));
   const layout = layoutName(url.searchParams.get("layout"));
   const allLangs = langsAll(url);
+  const part = partName(url, layout);
+  const side = capSide(url);
+  const index = segIndex(url);
 
   const cache = await caches.open("default");
-  const cacheKey = cacheKeyFor(url, lang, theme, layout, allLangs);
+  const cacheKey = cacheKeyFor(url, lang, theme, layout, allLangs, part, side, index);
   const cached = await cache.match(cacheKey);
   if (cached) return cached;
 
-  const response = await handleSvg(env, lang, theme, layout, allLangs);
+  const response = await handleSvg(env, lang, theme, layout, allLangs, part, side, index);
   if (response.ok) {
     ctx.waitUntil(cache.put(cacheKey, response.clone()));
   }
