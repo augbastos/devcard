@@ -52,6 +52,40 @@ export function pick<T>(map: Record<string, T>, key: string): T | undefined {
   return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : undefined;
 }
 
+// Neutral grey for the collapsed `Other` slice, and for any language that has
+// no colour of its own.
+export const NEUTRAL_LANGUAGE_COLOR = "#8b93a3";
+
+/** How a language slice is drawn and named.
+ *
+ * One place, so the bar, the legend and the hover tooltip always agree on a
+ * language's colour and label even though they show different sets of them:
+ * the bar keeps the whole tail, the legend collapses it, and the tooltip names
+ * whichever segment is under the pointer.
+ */
+export function sliceLabel(
+  slice: { language: string; isOther?: boolean; members?: string[] },
+  otherWord: string
+): string {
+  return slice.isOther ? otherWord : slice.language;
+}
+
+export function sliceColor(slice: { language: string; isOther?: boolean }): string {
+  return (slice.isOther ? undefined : pick(LANGUAGE_COLORS, slice.language)) ?? NEUTRAL_LANGUAGE_COLOR;
+}
+
+/** Tooltip text. Only reaches a reader who opens the SVG directly — inside an
+ *  <img>, which is how a README embeds it, hover never gets there. */
+export function sliceTitle(
+  slice: { language: string; isOther?: boolean; members?: string[] },
+  otherWord: string
+): string {
+  if (!slice.isOther || !slice.members?.length) return sliceLabel(slice, otherWord);
+  const shown = slice.members.slice(0, 6).join(", ");
+  const rest = slice.members.length - Math.min(6, slice.members.length);
+  return `${otherWord}: ${shown}${rest > 0 ? ` +${rest}` : ""}`;
+}
+
 export function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, Math.max(1, max - 1)) + "…" : s;
 }

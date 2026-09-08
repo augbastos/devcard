@@ -9,8 +9,18 @@ export interface HeatCell {
   level: number; // 0..4
 }
 
+export interface LanguageSlice {
+  language: string;
+  total: number;
+  /** True for the collapsed tail. Only ever appears in a legend, never in the
+   *  bar, and renders in the neutral colour. */
+  isOther?: boolean;
+  /** Languages folded into this slice, most lines first. Only set on `Other`. */
+  members?: string[];
+}
+
 export interface CardData {
-  languages: { language: string; total: number }[];
+  languages: LanguageSlice[];
   totalLines: number;
   totalBytes: number;
   repoCount: number;
@@ -39,6 +49,35 @@ interface DBEnv {
 }
 
 const HEAT_WEEKS = 16;
+
+/** How many languages the LEGEND names before collapsing the rest. */
+export const NAMED_LANGUAGES = 6;
+
+/** Collapse everything past `max` into a single named slice.
+ *
+ * This is a legend concern only. The bar keeps every language, however thin —
+ * on a real account the tail runs to Java at 0.05px and Ruby at 0.00px — so
+ * nothing disappears from the picture; the hover layer in `language-bar.ts`
+ * is what names those. The legend groups them instead, because five rows of
+ * near-zero percentages cost more attention than they return.
+ */
+export function withOtherBucket(
+  languages: LanguageSlice[],
+  max: number = NAMED_LANGUAGES
+): LanguageSlice[] {
+  // With exactly one language past the cut, naming it beats calling it "other".
+  if (languages.length <= max + 1) return languages;
+  const head = languages.slice(0, max);
+  const tail = languages.slice(max);
+  const total = tail.reduce((sum, l) => sum + l.total, 0);
+  if (total <= 0) return head;
+  return [...head, { language: OTHER_LANGUAGE, total, isOther: true, members: tail.map((l) => l.language) }];
+}
+
+/** Sentinel for the collapsed slice. Deliberately not a valid language name,
+ *  so it can never collide with something EXT_LANGUAGE produces, and it falls
+ *  through to the neutral colour. The word a reader sees is localized. */
+export const OTHER_LANGUAGE = "\u0000other";
 
 // Local calendar day (YYYY-MM-DD) for a unix timestamp in the owner's tz.
 // Intl handles DST correctly, which a fixed SQL offset would not.
@@ -99,7 +138,14 @@ export function buildHeatmap(
     const firstDay = week[0].day;
     const month = firstDay.slice(0, 7);
     if (month !== lastMonth) {
-      monthMarks.push({ weekIndex: w, label: monthFmt.format(new Date(firstDay + "T12:00:00Z")) });
+      // A month can begin in the week right after the previous one did, and two
+      // labels one cell apart overlap into "MayJun". Three weeks is the
+      // narrowest gap that stays legible at these font sizes; the month is
+      // still obvious from the ones that are drawn.
+      const previous = monthMarks[monthMarks.length - 1];
+      if (!previous || w - previous.weekIndex >= 3) {
+        monthMarks.push({ weekIndex: w, label: monthFmt.format(new Date(firstDay + "T12:00:00Z")) });
+      }
       lastMonth = month;
     }
     weeks.push(week);
@@ -220,7 +266,10 @@ export async function loadCardData(env: DBEnv, monthLocale: string): Promise<Car
       env.DB.prepare("SELECT day, lines FROM agg_day WHERE day >= ?").bind(dayFn(heatCutoff)).all(),
     ]);
 
-  const languages = (langRows.results as { language: string; total: number }[]) ?? [];
+  // Every language, ungrouped. How many get their own name is a layout
+  // decision — a 480px card has room for six, an 840px one for all of them —
+  // so each renderer calls `withOtherBucket` with its own cap.
+  const languages = ((langRows.results ?? []) as unknown as LanguageSlice[]);
   const totalLines = languages.reduce((sum, l) => sum + l.total, 0);
   const snap = snapshot as { repo_count: number; updated_at: number } | null;
   const badges = (profileRows.results as { kind: string; label: string }[]) ?? [];
