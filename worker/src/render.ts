@@ -67,7 +67,7 @@ export function streakBlock(data: CardData, t: Strings, rightX: number, baseY: n
   return flame + num + label;
 }
 
-export function renderFull(data: CardData, theme: Theme, t: Strings): string {
+export function renderFull(data: CardData, theme: Theme, t: Strings, allLangs = false): string {
   const W = 480;
   const PAD = 24;
 
@@ -86,7 +86,9 @@ export function renderFull(data: CardData, theme: Theme, t: Strings): string {
   // pointable; the legend collapses the tail so it reads at a glance. The two
   // are allowed to differ here precisely because hovering names what the
   // legend groups.
-  const legendSlices = withOtherBucket(data.languages, NAMED_LANGUAGES);
+  const legendSlices = allLangs
+    ? data.languages
+    : withOtherBucket(data.languages, NAMED_LANGUAGES);
   const slices = data.languages;
   const barGeo: BarGeometry = {
     x: PAD, y: barY, width: barW, height: barH, clampLeft: PAD, clampRight: W - PAD,

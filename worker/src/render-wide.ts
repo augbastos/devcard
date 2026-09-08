@@ -69,7 +69,9 @@ function headline(data: CardData, t: Strings): string {
  */
 function legend(data: CardData, slices: LanguageSlice[], t: Strings, top: number): { svg: string; bottom: number } {
   if (slices.length === 0) return { svg: "", bottom: top };
-  const columns = 3;
+  // Four columns once the legend is long, so `?langs=all` stays a wide block
+  // rather than a tall one.
+  const columns = slices.length > 9 ? 4 : 3;
   const rowH = 22;
   const perColumn = Math.ceil(slices.length / columns);
   const colW = INNER / columns;
@@ -144,12 +146,14 @@ function heatAndPins(
   return { svg: marks + cells.join("") + pins, bottom: heatBottom, columnX: PAD + gridW + 26, pinsBottom: top + data.pins.slice(0, 3).length * 48 };
 }
 
-export function renderWide(data: CardData, theme: Theme, t: Strings): string {
+export function renderWide(data: CardData, theme: Theme, t: Strings, allLangs = false): string {
   const barY = 132;
   const legendTop = 176;
   // Bar: every language, so nothing disappears and every sliver is pointable.
   // Legend: the tail collapsed, so it stays short. Hover bridges the two.
-  const legendSlices = withOtherBucket(data.languages, NAMED_LANGUAGES);
+  const legendSlices = allLangs
+    ? data.languages
+    : withOtherBucket(data.languages, NAMED_LANGUAGES);
   const slices = data.languages;
   const barGeo: BarGeometry = {
     x: PAD, y: barY, width: INNER, height: 14, clampLeft: PAD, clampRight: W - PAD,

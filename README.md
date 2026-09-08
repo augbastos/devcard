@@ -19,8 +19,15 @@
 </p>
 
 <p align="center">
-  <img src="https://card.devcard.workers.dev/svg?user=augbastos&amp;layout=wide&amp;theme=default" alt="devcard — live example" />
+  <img src="https://card.devcard.workers.dev/svg?user=augbastos&amp;layout=wide&amp;theme=default" alt="devcard — live example" title="Python · Markdown · TypeScript · HTML · JavaScript · PowerShell · JSON · CSS · SQL · YAML · Rust · Go · Shell · C++ · TOML · C · Java · Ruby — expand &quot;Every language&quot; below for live percentages" />
 </p>
+
+<details>
+<summary align="center">Every language, including the ones too thin to see</summary>
+<p align="center">
+  <img src="https://card.devcard.workers.dev/svg?user=augbastos&amp;layout=wide&amp;langs=all&amp;theme=default" alt="devcard with every language named" />
+</p>
+</details>
 
 <p align="center"><em>↑ This is a real, live card. It updates within seconds of its owner writing code.</em></p>
 
@@ -212,6 +219,11 @@ Mix and match with query params — every combination is a valid embed:
 |---|---|---|
 | `full` (default) | 480×tall | Everything: avatar, streak flame, language bar + legend, 16-week contribution heatmap, pinned repos, stats, badges |
 | `wide` | 840×~430 | The same content laid out across a README's full column width — legend in three columns, larger heatmap, pinned repos and badges beside it rather than below |
+
+`?langs=all` names every language in the legend instead of collapsing the tail
+into one `other` row. It works on `full` and `wide`, and is what makes an
+expandable full breakdown possible inside a GitHub README — see
+[the language bar](#the-language-bar-and-its-long-tail).
 | `banner` | 480×72 | One-line strip: avatar, @user, lines, streak, mini language bar — for forum sigs and tight READMEs |
 | `half` | 480×152 | Header + lines + language bar + stats row |
 | `vertical` | 280×~290 | Narrow column for site/blog sidebars |
@@ -233,11 +245,42 @@ Every language gets a target at least 3px wide — paid for out of the segments
 that have pixels to spare, so the targets tile the bar exactly and never
 overlap — and pointing at one shows its name and share.
 
-**That hover does not work in a GitHub README**, and cannot: GitHub serves the
-card through an `<img>`, and browsers render SVG-in-`<img>` in secure static
-mode, where no pointer event reaches the document. It works when the SVG is a
-document — open the card's URL directly, or embed it somewhere you control the
-markup with `<object data="…" type="image/svg+xml">`.
+That hover works wherever the SVG is a **document**: open the card's URL
+directly, or embed it somewhere you control the markup with
+`<object data="…" type="image/svg+xml">`.
+
+### Inside a GitHub README
+
+A README cannot deliver per-segment hover, and it is worth being precise about
+why rather than leaving it as folklore. GitHub renders the card through an
+`<img>`, and browsers put SVG-in-`<img>` in secure static mode, where no pointer
+event reaches the document. Every element that could carry the interaction
+instead is removed by GitHub's HTML sanitizer — tested against its markdown
+renderer:
+
+| | in a README |
+|---|---|
+| `<object>`, `<embed>`, `<iframe>` | stripped |
+| inline `<svg>`, `<style>` | stripped |
+| `<map>` / `<area>` (image map) | stripped |
+| `usemap` on `<img>` | kept, but its `<map>` is gone, so it does nothing |
+| `title` on `<img>` | **kept** |
+| `<details>` / `<summary>` | **kept**, including images inside |
+
+So the card uses the two that survive. The embed carries a `title`, which gives
+a native tooltip on hover, and `?langs=all` renders the same card with every
+language named — served from an expandable `<details>` block, so the full
+breakdown is one click away and always live rather than a caption someone has to
+keep up to date.
+
+```html
+<img src="…/svg?user=you&layout=wide" title="Python · Rust · Go · …" />
+
+<details>
+<summary>Every language</summary>
+<img src="…/svg?user=you&layout=wide&langs=all" />
+</details>
+```
 
 ## Badges, certifications, awards
 

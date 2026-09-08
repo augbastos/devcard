@@ -30,6 +30,12 @@ What "public API" means for devcard, since it is not a library:
   no pointer events at all.
 - **An `other` row in the legend**, collapsing the languages past the sixth so
   the legend stays short. The bar itself still draws every language.
+- **`?langs=all`**, which names every language in the legend. A GitHub README
+  cannot deliver hover — `<object>`, `<iframe>`, inline `<svg>`, `<style>` and
+  `<map>`/`<area>` are all removed by its sanitizer, so nothing can carry a
+  pointer event into the card. `<details>` and `title` do survive, so the
+  README pairs a `title` tooltip with an expandable second render that names
+  everything. It stays live instead of being a hand-maintained caption.
 
 - **Global event identity.** Every installation generates a random, opaque
   `source_id`; D1 dedupes on `(source_id, client_event_id)` instead of the local
