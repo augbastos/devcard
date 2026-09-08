@@ -60,7 +60,11 @@ def replace_block(readme: str, block: str) -> str:
         raise SystemExit(
             f"markers not found: the README needs {START} and {END} around the card"
         )
-    return readme[: start + len(START)] + "\n" + block + "\n" + readme[end:]
+    # Whatever the file already uses. Joining with "\n" regardless would rewrite
+    # a CRLF README's two inserted lines as LF, leaving the file with mixed
+    # endings and a diff noisier than the change.
+    newline = "\r\n" if "\r\n" in readme else "\n"
+    return readme[: start + len(START)] + newline + block + newline + readme[end:]
 
 
 def main(argv: list[str]) -> int:
@@ -76,7 +80,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--timeout", type=float, default=20.0)
     args = parser.parse_args(argv)
 
-    with open(args.readme, encoding="utf-8") as handle:
+    # newline="" keeps the file's own line endings intact through the round trip.
+    with open(args.readme, encoding="utf-8", newline="") as handle:
         readme = handle.read()
 
     origin = args.url or find_origin(readme)
