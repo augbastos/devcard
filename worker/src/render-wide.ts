@@ -146,9 +146,19 @@ function heatAndPins(
   return { svg: marks + cells.join("") + pins, bottom: heatBottom, columnX: PAD + gridW + 26, pinsBottom: top + data.pins.slice(0, 3).length * 48 };
 }
 
-export function renderWide(data: CardData, theme: Theme, t: Strings, allLangs = false): string {
+/** `split` renders the card body alone: no language bar, and a flat bottom
+ *  edge, because the bar is served separately as the card's last row so that a
+ *  README can hover one language at a time. See render-split.ts. */
+export function renderWide(
+  data: CardData,
+  theme: Theme,
+  t: Strings,
+  allLangs = false,
+  split = false
+): string {
   const barY = 132;
-  const legendTop = 176;
+  // With the bar gone, the legend closes the gap that was left for it.
+  const legendTop = split ? 140 : 176;
   // Bar: every language, so nothing disappears and every sliver is pointable.
   // Legend: the tail collapsed, so it stays short. Hover bridges the two.
   const legendSlices = allLangs
@@ -226,15 +236,25 @@ export function renderWide(data: CardData, theme: Theme, t: Strings, allLangs = 
   // The pills sit beside the heatmap, so they cost no height unless enough of
   // them wrap to run past its bottom edge.
   const pillsBottom = pillParts.length > 0 ? pillTop + (pillRow + 1) * 28 : 0;
-  const H = Math.max(footY + 18, pillsBottom + 46);
+  // In split mode the bar strip supplies the last 34px of the card, so the body
+  // stops that much earlier and the card ends up the same height either way.
+  const H = split
+    ? Math.max(footY + 14, pillsBottom + 42)
+    : Math.max(footY + 18, pillsBottom + 46);
+
+  // Flat bottom for the body: the same rounded rect, drawn past the viewBox so
+  // its bottom corners fall off-canvas. The strip below carries them instead.
+  const frame = split
+    ? `<rect class="bg brd" x="0.5" y="0.5" width="${W - 1}" height="${H + 14}" rx="14" stroke-width="1"/>`
+    : `<rect class="bg brd" x="0.5" y="0.5" width="${W - 1}" height="${H - 1}" rx="14" stroke-width="1"/>`;
 
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="devcard ${escapeXml(data.githubUser)}">
   <style>${cssFor(theme)}</style>
-  <rect class="bg brd" x="0.5" y="0.5" width="${W - 1}" height="${H - 1}" rx="14" stroke-width="1"/>
+  ${frame}
 
   ${header(data, t)}
   ${headline(data, t)}
-  ${languageBarSegments(slices, data.totalLines, barGeo, "wbar")}
+  ${split ? "" : languageBarSegments(slices, data.totalLines, barGeo, "wbar")}
   ${legendSvg}
   ${heatSvg}
 
@@ -242,6 +262,6 @@ export function renderWide(data: CardData, theme: Theme, t: Strings, allLangs = 
   ${footer}
   ${provenance}
   ${pillParts.join("\n  ")}
-  ${languageBarHover(slices, data.totalLines, barGeo, t.other)}
+  ${split ? "" : languageBarHover(slices, data.totalLines, barGeo, t.other)}
 </svg>`;
 }

@@ -1,0 +1,43 @@
+name: devcard readme
+
+# The card's language bar is one image per language, so each can carry its own
+# `title` and a README can name the language under the pointer. The widths and
+# that tooltip text are HTML attributes, so they live in the README and cannot
+# follow the data on their own — this is what moves them.
+#
+# Weekly, not daily: every slice's pixels are fetched live on each view, so what
+# goes stale between runs is only the proportions and the percentages, and a
+# language mix does not move far in a week. A daily bot commit would buy a
+# fraction of a point and cost a commit a day in the repository's history.
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: devcard-readme
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Regenerate the card block
+        run: python scripts/refresh_readme.py
+
+      - name: Commit if it changed
+        run: |
+          if git diff --quiet -- README.md; then
+            echo "language bar unchanged"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(readme): refresh the language bar" -- README.md
+          git push

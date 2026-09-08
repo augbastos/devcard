@@ -18,11 +18,13 @@
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT" />
 </p>
 
+<!-- devcard:start -->
 <p align="center">
   <img src="https://card.devcard.workers.dev/svg?user=augbastos&amp;layout=wide&amp;theme=default" alt="devcard — live example" title="Python · Markdown · TypeScript · HTML · JavaScript · PowerShell · JSON · CSS · SQL · YAML · Rust · Go · Shell · C++ · TOML · C · Java · Ruby" />
 </p>
+<!-- devcard:end -->
 
-<p align="center"><em>↑ This is a real, live card. It updates within seconds of its owner writing code.</em></p>
+<p align="center"><em>↑ A real, live card. Point at the bar and it names the language under the pointer.</em></p>
 
 Tools like WakaTime measure how long your editor is focused. devcard measures something new: **the actual output of your AI coding sessions**. A tiny hook watches every edit Claude Code makes on your machine, and your card updates in near real time — languages, volume, commits, activity — wherever it's embedded.
 
@@ -240,16 +242,19 @@ overlap — and pointing at one shows its name and share.
 
 That hover works wherever the SVG is a **document**: open the card's URL
 directly, or embed it somewhere you control the markup with
-`<object data="…" type="image/svg+xml">`.
+`<object data="…" type="image/svg+xml">`. A GitHub README is neither, and gets
+there another way — see below.
 
-### Inside a GitHub README
+### Hover inside a GitHub README
 
-A README cannot deliver per-segment hover, and it is worth being precise about
-why rather than leaving it as folklore. GitHub renders the card through an
-`<img>`, and browsers put SVG-in-`<img>` in secure static mode, where no pointer
-event reaches the document. Every element that could carry the interaction
-instead is removed by GitHub's HTML sanitizer — tested against its markdown
-renderer:
+The card above is hoverable on GitHub. Getting there meant giving up the idea
+that a card is one image.
+
+GitHub renders an embed through an `<img>`, and browsers put SVG-in-`<img>` in
+secure static mode: no pointer event reaches the document, so the SVG's own
+hover layer is unreachable. Every element that could carry the interaction
+instead is removed by GitHub's HTML sanitizer — measured against GitHub's own
+markdown renderer, not assumed:
 
 | | in a README |
 |---|---|
@@ -257,18 +262,56 @@ renderer:
 | inline `<svg>`, `<style>` | stripped |
 | `<map>` / `<area>` (image map) | stripped |
 | `usemap` on `<img>` | kept, but its `<map>` is gone, so it does nothing |
-| `title` on `<img>` | **kept** |
+| `title` on `<img>` | **kept** — and it is a real tooltip |
 | `<details>` / `<summary>` | **kept**, including images inside |
 
-So the embed uses the one that survives and is worth using: a `title`, which
-gives a native tooltip naming the languages in order. `<details>` survives too
-and can hold a second card rendered with `?langs=all`, but a legend of eighteen
-rows — half of them 0.0% — buys less than it costs on a page someone is reading;
-the grouped legend is the one that belongs in a README.
+A `title` names a whole image, so one image can only ever have one tooltip. The
+way out is for the bar to stop being part of the same image as the rest of the
+card: `?part=` serves the card as a body plus one slice per language, tiled into
+a row, each slice carrying its own `title`. Point at Ruby's sliver and it says
+Ruby.
+
+Three measurements on a rendered README fixed the geometry:
+
+- Adjacent `<img>` tags with **no whitespace between them** tile with a gap of
+  exactly 0, and percentage widths span the column exactly. A newline between
+  two tags becomes a space, and a space becomes a visible seam — which is why
+  the generated block is one long line.
+- `align="left"` stacks rows with no vertical gap, but GitHub's CSS gives
+  `img[align=left]` a `padding-right: 20px`, which blows a horizontal row apart.
+  `align="top"` stacks with no gap and adds no padding, so every piece uses it.
+- A paragraph always reserves a 24px line box, so a row of short images leaves
+  ~12px of slack **after** it. That is why the bar is the card's last row: the
+  slack falls below the card, where nothing shows it. Anywhere else it would
+  open a gap inside the card on a narrow column.
+
+The bar is drawn with a 4px floor per language, paid for out of the segments
+that have pixels to spare. Without it eight languages here sit under a pixel and
+three under a tenth of one — a bar that draws them honestly draws them
+invisible, and nothing can point at 0.03px. The percentage in each tooltip is
+the true share; only the pixels move.
+
+**Using it.** Ask the Worker for the block and paste it between two markers:
+
+```bash
+curl https://<your-worker-url>/embed?user=<you>
+```
 
 ```html
-<img src="…/svg?user=you&layout=wide" title="Python · Rust · Go · …" />
+<!-- devcard:start -->
+…the block…
+<!-- devcard:end -->
 ```
+
+The widths and the tooltip text are HTML attributes, so they live in your README
+and cannot follow your data on their own. `.github/workflows/devcard-readme.yml`
+regenerates them weekly with `scripts/refresh_readme.py`; every slice's pixels
+are fetched live on each view, so between runs the colours are current and only
+the proportions drift. If the card is unreachable, the script leaves the last
+good block alone rather than emptying it.
+
+A plain single-image embed still works everywhere and needs none of this — it
+just cannot hover.
 
 ## Badges, certifications, awards
 
