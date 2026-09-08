@@ -147,6 +147,54 @@ describe("the card names every part of its language bar", () => {
   });
 });
 
+describe("?langs=all", () => {
+  beforeEach(async () => {
+    await resetDb();
+    const events = REAL.slice(0, 12).map(([language, total], i) =>
+      ev({ id: i + 1, language, lines_added: Math.max(1, Math.round(total / 1000)) })
+    );
+    await SELF.fetch(ingestRequest({ source_id: "langsall", events, repo_count: 40 }));
+  });
+
+  const card = async (query = "") =>
+    (await SELF.fetch(`https://card.example/svg${query}`)).text();
+
+  it("names every language instead of collapsing the tail", async () => {
+    const svg = await card("?langs=all");
+    for (const [language] of REAL.slice(0, 12)) {
+      expect(svg, `${language} should be named`).toContain(`>${language}<`);
+    }
+    expect(svg).not.toContain(">other<");
+  });
+
+  it("leaves the default card collapsed", async () => {
+    expect(await card()).toContain(">other<");
+  });
+
+  it("works on the wide layout too", async () => {
+    const svg = await card("?layout=wide&langs=all");
+    // "Go" is the smallest language in this fixture — the one the collapsed
+    // legend would have hidden.
+    expect(svg).toContain(">Go<");
+    expect(svg).not.toContain(">other<");
+  });
+
+  it("gets its own cache entry, so it cannot be served the collapsed card", async () => {
+    // The bug this guards: a parameter that changes the render but not the key
+    // hands whichever version rendered first to everyone.
+    const collapsed = await card("?layout=wide");
+    const full = await card("?layout=wide&langs=all");
+    expect(full).not.toBe(collapsed);
+    expect(collapsed).toContain(">other<");
+    expect(full).not.toContain(">other<");
+  });
+
+  it("ignores any other value", async () => {
+    expect(await card("?langs=yes")).toContain(">other<");
+    expect(await card("?langs=")).toContain(">other<");
+  });
+});
+
 describe("wide layout", () => {
   beforeEach(async () => {
     await resetDb();
