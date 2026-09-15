@@ -10,9 +10,53 @@ What "public API" means for devcard, since it is not a library:
 - the `POST /ingest` request body;
 - the D1 schema;
 - the local files under `~/.claude/devcard/`;
-- the CLI surface of `setup.py` and `hook/install_git_hook.py`.
+- the CLI surface of `install.py` and `hook/install_git_hook.py`;
+- the deployment config template, `worker/wrangler.example.jsonc`.
 
 ## [Unreleased]
+
+### Breaking
+
+- **`setup.py` is now `install.py`.** It never was a setuptools script, and the
+  name made Python tooling treat it as one. Same wizard, same steps.
+- **Deployment config moved out of git.** `worker/wrangler.toml`, which carried
+  one deployment's database id, username and timezone, is replaced by a tracked
+  template, `worker/wrangler.example.jsonc`, that `install.py` renders into the
+  gitignored `worker/wrangler.jsonc`. For an existing deployment, re-run
+  `python install.py` and delete the old `wrangler.toml` — see
+  [upgrading](docs/manual-setup.md#upgrading-an-existing-deployment).
+- **Supported versions: Python 3.11+ and Node 22+.** Node 18 and 20 and Python
+  3.9 are past end of life, and Wrangler itself requires Node 22. Each floor is
+  defined once (`install.py`, `worker/package.json`), and a test keeps CI and the
+  README in step with it.
+- **The hook has no default Worker URL.** It used to fall back to the
+  maintainer's own Worker, so a hook installed without the installer sent its
+  token and activity there. Unconfigured, it now captures locally and sends
+  nothing.
+
+### Security
+
+- Ingest answers `503` when the Worker has no `INGEST_TOKEN` secret, instead of
+  depending on how an absent value compares.
+- The token comparison uses the runtime's `crypto.subtle.timingSafeEqual`, in the
+  length-safe pattern Cloudflare documents, instead of a hand-written loop.
+- A JSON body that is valid but not an object (`null`, `[]`, `42`) is a `400`; it
+  used to throw, which surfaced as a `500`.
+- SVG responses carry `Content-Security-Policy: default-src 'none'` (plus inline
+  style and `data:` images) and `X-Content-Type-Options: nosniff`, so a card
+  opened as a document can neither run script nor load anything.
+- The local token file is owner-only on every platform: created `0600` rather
+  than written and then `chmod`-ed, and on Windows with inherited permissions
+  removed. The installer no longer writes a second copy of the production token
+  into `worker/.dev.vars`.
+- Workflows: every Action pinned to a commit SHA (including the SCPE gate, which
+  was on a movable tag), `persist-credentials: false` everywhere, timeouts and
+  concurrency limits, no pull-request data interpolated into shell, and the
+  artifact the trusted `scpe-seal` job reads is validated before use.
+- New `security` workflow: Gitleaks over the full history, dependency review on
+  pull requests, and CodeQL for TypeScript, Python and the workflows. Dependabot
+  version updates for npm and Actions, with a seven-day cooldown.
+- npm dependency install scripts are disabled for the Worker toolchain.
 
 ### Added
 
@@ -60,22 +104,45 @@ What "public API" means for devcard, since it is not a library:
   database.
   Nothing is deleted or renumbered; pre-existing rows and hooks that predate the
   field keep their previous behaviour under a `legacy` namespace.
-- **Product CI** (`.github/workflows/ci.yml`): the hook suite on Python 3.9,
-  3.11 and 3.13, plus the Worker's typecheck and test suite on every pull
-  request and push to `master`.
+- **Product CI** (`.github/workflows/ci.yml`): the hook and installer suites on
+  Ubuntu and Windows (Python 3.11 and 3.14), Ruff, and the Worker's typecheck,
+  test suite and a dry-run bundle (Node 22 and 24), on every pull request and
+  push to `main`. One aggregate check, `ci-ok`, is what the branch ruleset
+  requires, so changing the matrix never strands a required check.
 - **Worker test suite** running inside workerd against a real local D1 via
-  `@cloudflare/vitest-pool-workers` — ingest auth and validation, body and batch
-  caps, event identity, cache keys, rendering, XML escaping, timezone handling
-  and the nightly rollup rebuild.
+  `@cloudflare/vitest-plugin` — ingest auth and validation, body and batch caps,
+  event identity, cache keys, rendering, XML escaping, response headers,
+  timezone handling and the nightly rollup rebuild.
+- **Installer tests** that run `install.py` end to end against a fake
+  Node/npm/Wrangler: every check before any change, the Worker secret before its
+  local copy, and a second run that converges instead of duplicating.
 - **git integration tests** against real temporary repositories: merge, octopus,
   fast-forward, squash, first commit, `core.hooksPath`, worktrees, existing
   hooks, husky, and paths with spaces.
 - `--uninstall` for `hook/install_git_hook.py`.
 - `~/.claude/devcard/worker-url` (and `DEVCARD_WORKER_URL`) as the hook's
   endpoint configuration.
-- `docs/retention.md` — the measurements behind leaving raw events in place.
+- `docs/retention.md` — the capacity reasoning behind leaving raw events in
+  place, and the queries to measure your own installation.
 
 ### Fixed
+
+- **The last edits of a session could wait for the next session.** The capture
+  hook starts the syncer at most once per 20 seconds, so an edit made inside that
+  window started nothing and stayed local until the next tool call — possibly
+  the next day. The syncer now drains once more when the window closes.
+- **git mode drained one 50-event batch per commit.** Nothing else sends in git
+  mode, so a backlog built up offline trailed behind for as many commits as it
+  had batches. A commit now drains it completely, in the background.
+- **The installer never opened the Cloudflare login.** `wrangler whoami` exits 0
+  when logged out, so checking its exit code always passed; it now uses
+  `whoami --json`, which fails.
+- **Re-running the installer reset the card's repository count to zero** until
+  the next sync: its smoke test sent `repo_count: 0`, which ingest publishes. The
+  smoke test sends no count now.
+- **Re-running the installer from a moved clone** left Claude Code calling the old
+  hook path, which fails silently by design. The existing entry is updated in
+  place.
 
 - **`?theme=constructor` returned a 500.** `THEMES[name]` resolved inherited
   `Object.prototype` members; the theme lookup is now an own-property check.
@@ -93,7 +160,7 @@ What "public API" means for devcard, since it is not a library:
   `git rev-parse --git-path`. It also refuses to append shell to a non-shell
   hook instead of corrupting it, and redirects husky installs out of the
   regenerated `.husky/_` folder.
-- **`setup.py` split folder input on whitespace,** so any path containing a
+- **The installer split folder input on whitespace,** so any path containing a
   space was silently discarded. Folders are now entered one per line.
 - **Deleted files donated their added bytes to the next file** in the git
   hook's patch parser.
@@ -118,6 +185,20 @@ What "public API" means for devcard, since it is not a library:
 
 ### Changed
 
+- **`@cloudflare/vitest-pool-workers` is replaced by `@cloudflare/vitest-plugin`**,
+  Cloudflare's successor, migrated with the official codemod. Together with
+  Wrangler 4.132 this resolves the `sharp` advisory (GHSA-rgj7-g3m4-5g8c) that
+  the old dependency tree held in place; `npm audit` reports nothing.
+  TypeScript 7, current workers-types, compatibility date 2026-09-15.
+- **The weekly README refresh opens a pull request** instead of pushing to
+  `main`, which the branch ruleset rightly rejects. It updates one open pull
+  request rather than stacking new ones, and does nothing when the block has not
+  changed.
+- `docs/retention.md` no longer publishes one installation's exact activity
+  figures; it gives rounded capacity bounds and a way to measure your own.
+- `CLAUDE.md` holds only durable guidance for coding agents; dated state moved
+  out.
+
 - **The README is 216 lines instead of 524.** The reference material it had
   accumulated — counting rules, the privacy and security model, the GitHub
   hover measurements, the manual setup steps — moved to `docs/` under their own
@@ -128,11 +209,11 @@ What "public API" means for devcard, since it is not a library:
   git-captured card shows commits alone rather than an impressive but
   meaningless number. Lines, languages, heatmap and streak are unchanged in
   both modes.
-- `setup.py` verifies Python, Node (>= 18), npm and git versions before it
-  creates anything, and runs `npm ci` so wrangler comes from the lockfile
-  rather than whatever `npx` fetches today.
-- `setup.py` no longer rewrites `WORKER_INGEST_URL` in `hook/devcard_lib.py`.
-- The local token file is written `0600` on macOS/Linux.
+- The installer verifies Python, Node, npm and git before it creates anything,
+  runs `npm ci`, and calls the locked Wrangler directly rather than whatever
+  `npx` fetches today.
+- The installer no longer rewrites `WORKER_INGEST_URL` in `hook/devcard_lib.py`;
+  the endpoint is local config.
 - `~/.claude/settings.json` keeps its *first* backup instead of being
   re-backed-up over on a second run, and is validated before any provisioning
   starts.

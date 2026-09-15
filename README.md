@@ -8,8 +8,8 @@
   <a href="https://github.com/augbastos/devcard/actions/workflows/ci.yml"><img src="https://github.com/augbastos/devcard/actions/workflows/ci.yml/badge.svg" alt="ci" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="license: MIT" /></a>
   <img src="https://img.shields.io/badge/Cloudflare-Workers%20%2B%20D1-f38020?logo=cloudflare&logoColor=white" alt="Cloudflare Workers + D1" />
-  <img src="https://img.shields.io/badge/TypeScript-5.5-3178c6?logo=typescript&logoColor=white" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/Python-3-3776AB?logo=python&logoColor=white" alt="Python 3" />
+  <img src="https://img.shields.io/badge/TypeScript-3178c6?logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white" alt="Python" />
 </p>
 
 <!-- devcard:start -->
@@ -23,27 +23,31 @@ a different question: **what came out of the session**. A hook records the edits
 your agent makes — or, for any other tool, each commit — and your card updates
 from there.
 
-- **Live, not batch.** Edits reach the backend within seconds of being made,
+- **Live, not batch.** An edit reaches your Worker within about half a minute,
   and the rendered card is cached for five minutes — not "synced last night".
-- **Private by architecture.** Project names, file paths and code content never
-  leave your machine — there is no column in the public database where a
-  filename could even be stored.
+- **Content-private by architecture.** Code, file names, paths and project names
+  never leave your machine; the public database has no column that could hold
+  one. What does leave is activity metadata — when, which language, how many
+  lines and bytes — plus a repository count and a random installation id.
+  [Exactly what, and what the card shows →](docs/privacy-and-security.md)
 - **Embeds anywhere** an `<img>` works, follows the viewer's light/dark theme,
   and speaks en/pt/es.
 
 ## Get one
 
-Python 3.9+, Node 18+, npm, git, and a free
-[Cloudflare account](https://dash.cloudflare.com/sign-up). The wizard checks all
-of them before it creates anything.
+Python 3.11+, Node 22+, npm, git, and a free
+[Cloudflare account](https://dash.cloudflare.com/sign-up). The installer checks
+all of them before it creates anything.
 
 ```bash
-git clone https://github.com/augbastos/devcard && cd devcard && python setup.py
+git clone https://github.com/augbastos/devcard && cd devcard && python install.py
 ```
 
 It creates your D1 database, deploys your Worker, installs the capture hook, and
-prints your embed. Two questions — three in `git` mode, which also asks where
-your repos live. [By hand instead →](docs/manual-setup.md)
+prints your embed. Your deployment's settings go to a gitignored config, never
+into a tracked file, and re-running it is safe. Two questions — three in `git`
+mode, which also asks where your repos live.
+[By hand instead →](docs/manual-setup.md)
 
 ## Works with your agent
 
@@ -110,8 +114,22 @@ flowchart LR
 ```
 
 Events land locally first, so capture works offline and never blocks your
-session. Rollup tables mean one render reads about a hundred rows rather than
-one per event ever recorded, which is what keeps a card inside the free tier.
+session. Each event carries a random installation id and its local row id, so a
+retried batch, a second machine or a deleted local database never counts
+anything twice. Rollup tables mean one render reads about a hundred rows rather
+than one per event ever recorded, which is what keeps a card inside the free
+tier.
+
+## Built to be checked
+
+- **Tests run against the real thing.** The Worker suite runs inside workerd
+  against a local D1; the git suite builds throwaway repositories and runs real
+  git — merges, worktrees, `core.hooksPath`, husky, paths with spaces.
+- **CI on Linux and Windows**, at the oldest and newest supported Python and
+  Node, with no Cloudflare account or secret — a fork's pull request runs all of it.
+- **Supply chain**: a locked npm tree installed without install scripts, every
+  Action pinned to a commit SHA, Dependabot, dependency review, Gitleaks over the
+  full history, and CodeQL for TypeScript, Python and the workflows themselves.
 
 ## Going deeper
 
@@ -122,9 +140,9 @@ one per event ever recorded, which is what keeps a card inside the free tier.
 | [Privacy and security](docs/privacy-and-security.md) | What leaves your machine, and what stops it |
 | [Known limitations](docs/limitations.md) | Where it under- and over-counts, and why |
 | [Making it yours](docs/customizing.md) | Themes, layouts, badges, pinned repos |
-| [Running the tests](docs/development.md) | Both suites, and one deploy trap |
+| [Development and CI](docs/development.md) | Both suites, the checks, and one deploy trap |
 | [Manual setup](docs/manual-setup.md) | The wizard's steps, by hand |
-| [Event retention](docs/retention.md) | Why nothing is deleted, with the numbers |
+| [Event retention](docs/retention.md) | Why nothing is deleted, and how to measure your own |
 
 ---
 

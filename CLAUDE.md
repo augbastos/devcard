@@ -1,131 +1,136 @@
-# devcard — CLAUDE.md
+# devcard — notes for coding agents
 
-Live embeddable SVG dev-stats card driven by real Claude Code / git activity.
-Cloudflare Worker + D1 render the public card; a local Python hook captures
-events. Public repo, **MIT** (github.com/augbastos/devcard). Live at
-`card.devcard.workers.dev/svg?user=augbastos`.
+A live, embeddable SVG card built from real coding activity. A local Python hook
+captures events into SQLite; a background syncer sends anonymized rows to a
+Cloudflare Worker; the Worker stores them in D1, keeps rollup tables, and renders
+the card. Public repository, MIT.
 
-## Read first
-- `README.md` — architecture, privacy/security model, capture-mode table,
-  counting rules (merge behaviour, event identity, `code edits` semantics)
-- `CHANGELOG.md` — what changed and why, newest first
-- `worker/src/index.ts` — routing, ingest validation/caps, i18n strings
-- `worker/schema.sql` — public D1 schema (proof: no project/path column exists)
-- `hook/devcard_lib.py` — local SQLite schema, token loading, sync
-
-## Verified commands
-```powershell
-cd worker; npm ci                      # pinned toolchain (CI uses this too)
-cd worker; npm run dev                 # wrangler dev (add --remote for real D1)
-cd worker; npm run typecheck           # tsc on src AND test — must stay clean
-cd worker; npm test                    # vitest in workerd + local D1
-cd worker; npm run deploy              # wrangler deploy → card.devcard.workers.dev
-python -m unittest discover -s hook -p "test_*.py"   # all hook suites
-python setup.py       # full wizard (new deployments)
 ```
-CI (`.github/workflows/ci.yml`) runs both suites on every PR and on `master`:
-hook on Python 3.9/3.11/3.13, worker on Node 20. It needs no Cloudflare account
-and no secret, so fork PRs run it in full. The `scpe` workflows are an AI-use
-disclosure gate, not a test of the code.
+Claude Code PostToolUse hook ─┐
+                              ├─> local SQLite (offline-first) ─> syncer ─> POST /ingest ─> Worker ─> D1 ─> rollups ─> GET /svg
+git post-commit hook ─────────┘
+```
 
-## Invariants (the product's promise — never violate)
-- **Project names/file paths never reach D1 or the card.** The sync payload is a
-  SQL projection that excludes `project_key`; the D1 schema has no column for it.
-  Any new query/field must preserve this.
-- **INGEST_TOKEN is never printed, logged, or committed.** It lives in
-  `worker/.dev.vars` (gitignored) and `~/.claude/devcard/token`. Read it into a
-  shell variable; a leak already forced one rotation.
-- **Capture modes are exclusive per machine** (`~/.claude/devcard/mode` = `claude`
-  or `git`) — both at once double-counts lines.
-- **`edit`/`write` and `diff` are different units and must not be summed.**
-  `edit`/`write` = one agent tool call (claude mode); `diff` = one
-  per-commit, per-language aggregate (git mode). The card only prints the
-  "code edits" stat when there are agent edits to report.
-- **Event identity is `(source_id, client_event_id)`, never the rowid alone.**
-  A rowid restarts at 1 on every install and after every `events.db` deletion.
-  `source_id` is random and opaque — never derive it from hostname, username,
-  MAC or any path.
-- **The namespace belongs to the EVENT.** Local `events.source_id` is stamped at
-  insert and never changes; a batch may mix `legacy` (queued before this install
-  had an id) with the current id. Re-sending an un-acknowledged backlog under a
-  new id counts the same work twice — that is the whole reason the column
-  exists, so never "simplify" it back to a per-batch field.
-- **No source id means send NOTHING.** Never fall back to `legacy` — that
-  silently merges this machine's rowids with every other unidentified install.
-  Events stay unsynced and are retried; `get_unsynced_events` refuses to return
-  unstamped rows so this cannot be got wrong by accident.
-- **Tests must never touch `~/.claude/devcard/`.** `test_git_integration.py`
-  redirects `DB_PATH`/`ERROR_LOG_PATH`/`SOURCE_ID_PATH`/`GITHUB_CACHE_PATH` in
-  `setUp` and asserts the redirection took. This is not theoretical: while these
-  suites were being written, a run wrote eight rows into the live `events.db`
-  (caught before the syncer published them) because the paths were default
-  arguments, bound at import, so patching the module constant did nothing.
-- Every dynamic string interpolated into SVG goes through `escapeXml` (it's
-  strict XML — HTML entities like `&middot;` break rendering in browsers).
-- Never commit: `.dev.vars`, `.wrangler/`, `*.db`, `docs/superpowers/` (internal
-  PT docs, deliberately kept out of the public repo).
+This file holds what stays true. What changed and when belongs in `CHANGELOG.md`,
+commits and pull requests — not here.
+
+## Where things are
+
+| Path | What |
+|---|---|
+| `hook/devcard_lib.py` | Local schema, event parsing, identity (`source_id`), sync. The core of the client. |
+| `hook/devcard_capture.py` | Claude Code hook entrypoint. Hot path: parse, insert, maybe spawn the syncer. |
+| `hook/devcard_sync.py` | Detached syncer: drains, then drains once more when the throttle window closes. |
+| `hook/devcard_git_hook.py`, `hook/install_git_hook.py` | git mode: per-commit capture, and its installer. |
+| `install.py` | End-to-end installer (Cloudflare provisioning, config render, token, hook). |
+| `worker/src/index.ts` | Routing, ingest validation and caps, rollup maintenance, nightly rebuild. |
+| `worker/src/variants.ts` | Request → (lang, theme, layout, part) resolution and the cache key. |
+| `worker/src/queries.ts` | Every D1 read the card makes. Reads rollups only, never `events`. |
+| `worker/src/render*.ts`, `themes.ts`, `svg-utils.ts`, `language-bar.ts` | Pure renderers. |
+| `worker/schema.sql`, `worker/migrations/` | D1 schema for a new database; upgrades for an existing one. |
+| `worker/wrangler.example.jsonc` | Tracked deployment template. `install.py` renders the gitignored `wrangler.jsonc`. |
+| `docs/` | Counting rules, privacy and security, limitations, retention, setup by hand. |
+
+## Commands
+
+```bash
+python -m unittest discover -s hook -p "test_*.py"   # hook, git integration, installer
+pipx run ruff==0.16.7 check .                         # lint (rules in ruff.toml)
+
+cd worker
+npm ci                 # locked toolchain; .npmrc disables dependency install scripts
+npm run typecheck      # src and test
+npm test               # Vitest inside workerd, against a local D1 — no account needed
+npx wrangler deploy --dry-run --config wrangler.example.jsonc --outdir /tmp/bundle
+npm run dev            # needs worker/wrangler.jsonc (python install.py, or copy the template)
+npm run deploy         # the maintainer's call, never an agent's side effect
+```
+
+Version floors live in exactly two places: `MIN_PYTHON` in `install.py` and
+`engines.node` in `worker/package.json`. Tests fail if CI's matrix or the README
+disagree with them.
+
+## Invariants — never break these
+
+- **No project name, path, file name or code content reaches D1 or the card.**
+  The sync payload is a SQL projection without `project_key`, and D1 has no
+  column that could hold one. Tests assert this on the serialized bytes. Any new
+  field must keep it true.
+- **`INGEST_TOKEN` is never printed, logged, committed or put in a URL or body.**
+  It is a Worker secret, plus one owner-only local copy (`~/.claude/devcard/token`)
+  or `DEVCARD_INGEST_TOKEN`. Read it into a variable; never echo it.
+- **Ingest fails closed.** No secret configured → 503. Wrong token → 401, compared
+  with `crypto.subtle.timingSafeEqual`, never `===`.
+- **Event identity is `(source_id, client_event_id)`**, never the rowid alone.
+  `source_id` is random (`secrets.token_hex`) — never derived from hostname,
+  username, MAC or a path.
+- **The namespace belongs to the event.** A local row keeps the `source_id` it was
+  stamped with forever; one batch may mix `legacy` and the current id. Re-sending
+  a backlog under a new id double-counts, so do not "simplify" this into a
+  per-batch field.
+- **No source id, or no Worker URL, means send nothing.** Never fall back to
+  `legacy` or to a default endpoint. Events wait and are retried.
+- **Ingest is idempotent end to end**: `INSERT OR IGNORE ... RETURNING` decides
+  which events landed, and only those are folded into the rollups.
+- **The card renders from rollups only.** A render must not scan `events`; the
+  nightly rebuild is the only full pass.
+- **`edit`/`write` and `diff` are different units.** One agent tool call vs. one
+  per-commit, per-language aggregate. Never sum them into "code edits".
+- **Capture modes are exclusive per machine** (`~/.claude/devcard/mode`). Both at
+  once counts the same lines twice.
+- **Every dynamic string in SVG or embed HTML goes through `escapeXml`.** The card
+  is strict XML: HTML entities such as `&middot;` break it.
+- **Query parameters are resolved with own-property lookups.** `?theme=constructor`
+  must fall back, not reach `Object.prototype`.
+- **The edge cache key is the resolved variant**, never the request URL.
+  `Accept-Language` decides the body without being in the URL, and `Vary` does
+  not separate entries on the `caches.open("default")` path.
+- **Hooks never block or fail the tool or the commit.** Errors go to
+  `~/.claude/devcard/errors.log`, throttled.
+
+## Rules for tests
+
+- **A test must never touch `~/.claude/devcard/`.** Redirect `DB_PATH`,
+  `ERROR_LOG_PATH`, `SOURCE_ID_PATH`, `GITHUB_CACHE_PATH`, and set
+  `WORKER_INGEST_URL`/`INGEST_TOKEN` to stand-ins. Paths are read from the module
+  at call time for exactly this reason — do not turn them back into default
+  arguments, which bind at import and make patching a no-op.
+- git behaviour is tested against real temporary repositories, not mocks.
+- The Worker suite runs against real workerd and D1. Bindings are fixed in
+  `vitest.config.mts`; a local `.dev.vars` must not change what a test sees.
+- Outbound requests are answered by `outboundService` in `vitest.config.mts`;
+  anything unmocked returns 599 rather than reaching the network.
 
 ## Gotchas
-- Hooks fail silently by design (never block Claude Code) — debugging starts at
-  `~/.claude/devcard/errors.log`, not stdout.
-- Cloudflare edge 403s Python urllib's default User-Agent — the hook sends
-  `User-Agent: devcard-hook/1.0`; don't remove it.
-- `wrangler.toml` carries the real database_id + GITHUB_USERNAME + TIMEZONE on
-  purpose (deployment config, not secrets). The hook's endpoint is NOT source
-  config any more — it lives in `~/.claude/devcard/worker-url` (or
-  `DEVCARD_WORKER_URL`); don't reintroduce the `WORKER_INGEST_URL` rewrite.
-- Card is served via `<img>`: links inside SVG don't click there (browser
-  limitation, same as all stats cards).
-- Levels/XP exist in data but are deliberately NOT rendered (anti-inflation
-  tuning pending) — don't "helpfully" re-add them.
-- **`repo_count` is the GitHub owned-repo total** (public + private, read via the
-  local `gh` CLI), NOT a count of `known_repos` rows. Those rows are raw cwds —
-  scratchpads, `node_modules`, and eleven subfolders of one repo included — and
-  publishing them straight is what made the card claim **115 repos against a
-  real 40**. `local_repo_count()` (distinct git roots) is the no-`gh` fallback;
-  the raw row count is never published.
-- Tests must never let `log_error` hit the real `~/.claude/devcard/errors.log` —
-  stub it. That file is the documented debugging surface; fake "boom" entries
-  from test runs already polluted it once.
-- The edge cache is keyed on the RESOLVED variant (`lang`, `theme`, `layout`),
-  not on the request URL. Keying on the URL let `Accept-Language` decide the
-  body without appearing in the key, and `Vary` is no help: workerd's local
-  cache ignores it (a test proves this), and at the edge it keys per *verbatim*
-  header value, so `en-US,en;q=0.9` and `en-GB,en;q=0.7` would be two entries of
-  the identical English card.
-- `git rev-parse --git-path hooks/post-commit` answers RELATIVE to the directory
-  it ran in. Join it back onto that directory, never onto the process cwd.
 
-## State (2026-09-07 — update when it changes)
-v2 live: heatmap (16w, timezone-aware), real streak + flame, staleness line,
-6 themes (?theme= default/dark/light/gentle/cyberpunk/terminal), 4 layouts
-(?layout= full/banner/half/vertical). Worker split into modules (queries/themes/
-render/render-layouts/svg-utils).
+- Hooks fail silently by design — debugging starts at `~/.claude/devcard/errors.log`.
+- Cloudflare's edge rejects urllib's default User-Agent; the hook sends
+  `devcard-hook/1.0`.
+- Do not export non-handler values from `worker/src/index.ts`. workerd rejects
+  them at startup ("Incorrect type for map entry") even though typecheck, tests
+  and `--dry-run` pass. Shared constants live in `variants.ts`.
+- `worker/tsconfig.json` has no DOM lib on purpose: lib.dom's `SubtleCrypto` lacks
+  the runtime's `timingSafeEqual`.
+- `git rev-parse --git-path hooks/post-commit` answers relative to the directory
+  it ran in. Join it onto that directory, not the process cwd.
+- `repo_count` is the GitHub owned-repository total read through the local `gh`
+  CLI (public + private); the no-`gh` fallback is distinct git roots. The raw
+  count of recorded working directories is never published.
+- An SVG inside `<img>` receives no pointer events, and GitHub strips every
+  element that could carry them — hence the split `?part=` card and
+  `docs/hover-in-a-readme.md`.
+- A schema change ships as a migration in `worker/migrations/` plus the matching
+  change in `schema.sql`; `test/migration.test.ts` asserts the two agree. Apply
+  the migration together with the Worker deploy that needs it.
 
-**2026-09-07 hardening pass — in the working tree, NOT committed and NOT
-deployed.** Event identity (`source_id` + migration 0001), safe theme/lang
-lookups, resolved-variant cache key, merge-commit counting, `git rev-parse`
-hook installation, `diff` vs `edit` semantics, setup.py hardening, and a real
-CI. 86 worker tests + 127 hook tests, all green locally. See `CHANGELOG.md`.
+## Repository rules
 
-⚠️ **Deploy order matters.** The Worker and the schema go together: apply
-`worker/migrations/0001_event_source_id.sql` with the deploy, or the new
-`source_id` bind hits a column that does not exist. The hook may be updated
-before or after — an older Worker ignores the extra `source_id` key, and a newer
-Worker files a hook that omits it under `legacy`.
-
-✅ **`master` IS deployed.** Verified 2026-09-07 with
-`npx wrangler deployments list --name card`: the newest deployment is
-**2026-09-02T07:16Z**, and the live response carries `s-maxage=300` +
-`Vary: Accept-Language`, which only exist from `f26cb35` onward. The earlier
-"still the 2026-07-05 build" warning was true on 2026-09-01 and went stale after
-the 09-02 deploy — do not repeat it without re-checking.
-
-⛔ **The cache language bug is LIVE right now.** Measured against
-`card.devcard.workers.dev` on 2026-09-07, on a variant nobody had requested:
-first visitor `Accept-Language: en-US` → English; the next two, `pt-BR` and
-`es-ES`, both got **English**. The first visitor's language freezes into the
-entry for everyone. `Vary: Accept-Language` is on the response and does NOT save
-it — so the docs' Vary guarantee does not apply to this `caches.open("default")`
-path in practice. This is what the resolved-variant cache key fixes.
-Audit: `an internal audit note`.
+- `main` is protected: pull request, squash merge, required checks (`ci-ok`,
+  `secrets`, `dependencies`, `verify`). No direct pushes, no force pushes.
+- Every pull request carries an AI-use disclosure (`scpe` check): tick the box in
+  the template or add an `Assisted-by:` trailer.
+- Actions are pinned by commit SHA with the version in a comment; keep it that way.
+- Never commit `worker/wrangler.jsonc`, `.dev.vars*`, `.env*`, `*.db`, `.wrangler/`
+  or `docs/superpowers/`.
+- Prefer existing tools and platform features over custom code, and keep the
+  architecture above: no framework, no extra services, no second database.
