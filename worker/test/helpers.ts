@@ -4,7 +4,7 @@ import { cacheKeyFor, LAYOUTS, STRINGS } from "../src/variants";
 import { THEMES } from "../src/themes";
 
 // D1's `exec()` splits on newlines, so it cannot run the pretty-printed
-// schema.sql the README tells people to apply. Rather than keep a second,
+// schema.sql the docs tell people to apply. Rather than keep a second,
 // single-line copy of the schema (which would drift), tests parse the real
 // file: strip `--` comments, split on statement terminators, run the rest.
 // A test asserts the parse produced the tables the card actually reads.

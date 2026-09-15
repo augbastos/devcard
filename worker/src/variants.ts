@@ -154,9 +154,11 @@ export function segIndex(url: URL): number {
 // `?theme=dark&t=2`, and a bare request each got their own entry of the same
 // image.
 //
-// Keying on the resolved (lang, theme, layout) instead bounds the cache at
-// 3 x 6 x 5 = 90 entries, one per card that can actually be rendered, and makes
-// the language separation a property of this code rather than of edge config.
+// Keying on the resolved variant instead bounds the cache to one entry per card
+// that can actually be rendered — every (lang, theme, layout) combination, the
+// `langs=all` legend, and the pieces of the split `wide` card, whose slice index
+// is capped by `segIndex` — and makes the language separation a property of
+// this code rather than of edge config.
 // `user` is deliberately absent: a wrong user 404s before we get here, and the
 // only accepted value renders identically to omitting it.
 export function cacheKeyFor(

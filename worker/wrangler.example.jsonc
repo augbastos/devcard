@@ -1,0 +1,41 @@
+// The deployment template. Tracked, and deliberately generic.
+//
+// `python install.py` renders this file into `wrangler.jsonc` — gitignored —
+// filling in the three values marked `install.py:` below. Your database id,
+// username and timezone therefore never live in a tracked file, and `git pull`
+// never conflicts with them. Re-running the installer re-renders it, which is
+// also how a change to this template reaches an existing deployment.
+//
+// By hand: copy this file to `wrangler.jsonc` and replace the three values.
+//
+// The test suite runs against this template directly. Its local D1 is created
+// by miniflare and ignores the placeholder id, so tests and CI need no account.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "card",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-15",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "devcard",
+      // install.py: the id `wrangler d1 create devcard` prints.
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  "vars": {
+    // install.py: the GitHub account the card renders. `/svg?user=` must match it.
+    "GITHUB_USERNAME": "your-github-username",
+    // install.py: an IANA zone. It decides where a day starts on the heatmap
+    // and the streak.
+    "TIMEZONE": "UTC"
+  },
+  // Nightly rollup rebuild. The rollups the card renders from are maintained
+  // incrementally at ingest, so they can drift — a deploy landing mid-write, a
+  // manual INSERT, a bug. This recomputes them from `events` once a day, at a
+  // quiet hour, so drift can never accumulate past 24h.
+  "triggers": {
+    "crons": ["17 4 * * *"]
+  }
+  // INGEST_TOKEN is a secret, never a var: `wrangler secret put INGEST_TOKEN`.
+}

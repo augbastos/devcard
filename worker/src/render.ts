@@ -160,7 +160,7 @@ export function renderFull(data: CardData, theme: Theme, t: Strings, allLangs = 
   // produces. A git-captured card has no comparable number — its `diff` rows
   // are per-commit language aggregates — so rather than print an impressive
   // but meaningless figure under that label, the slot is dropped and commits
-  // move into it. See "Counting rules" in the README.
+  // move into it. See docs/counting.md.
   const footer = data.totalActions > 0
     ? stat(PAD, String(data.totalActions), t.edits) +
       stat(PAD + 200, String(data.totalCommits), t.commits)

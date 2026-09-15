@@ -103,11 +103,9 @@ export function languageBarHover(
   }
 
   const groups: string[] = [];
-  let x = geo.x;
   let hitX = geo.x;
 
   for (const [i, slice] of slices.entries()) {
-    const w = widths[i];
     const hitW = hitWidths[i];
     const pct = ((slice.total / totalLines) * 100).toFixed(1);
     const label = `${sliceLabel(slice, otherWord)} ${pct}%`;
@@ -129,7 +127,6 @@ export function languageBarHover(
         `</g>` +
         `</g>`
     );
-    x += w;
     hitX += hitW;
   }
 

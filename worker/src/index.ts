@@ -149,7 +149,7 @@ const MAX_REPO_COUNT = 10000;
 // `edit`/`write` come from the Claude Code hook and count one agent tool call
 // each. `diff` comes from the git hook and is a per-commit, per-language
 // aggregate — a different unit entirely, which is why it is not called `edit`.
-// See "Counting rules" in the README.
+// See docs/counting.md.
 const EVENT_TYPES = new Set(["edit", "write", "commit", "diff"]);
 
 // Opaque, random, per-install. Deliberately narrow: it is written straight into
@@ -197,23 +197,24 @@ function sanitizeEvent(e: unknown): IngestEvent | null {
   };
 }
 
-// Constant-time string compare — avoids leaking the ingest token via
-// response-timing differences on a byte-by-byte mismatch (CWE-208).
-function timingSafeEqual(a: string, b: string): boolean {
-  const enc = new TextEncoder();
-  const aBytes = enc.encode(a);
-  const bBytes = enc.encode(b);
-  const len = Math.max(aBytes.length, bBytes.length);
-  let diff = aBytes.length ^ bBytes.length;
-  for (let i = 0; i < len; i++) {
-    diff |= (aBytes[i] ?? 0) ^ (bBytes[i] ?? 0);
-  }
-  return diff === 0;
+// Constant-time token check (CWE-208), using the runtime's own
+// `crypto.subtle.timingSafeEqual` rather than a hand-rolled loop. It throws on
+// inputs of different lengths, and returning early there would leak the
+// secret's length through timing — so a mismatched length still runs one
+// comparison, of the input against itself. This is the pattern Cloudflare
+// documents in "Protect against timing attacks".
+function tokenMatches(presented: string, secret: string): boolean {
+  const encoder = new TextEncoder();
+  const given = encoder.encode(presented);
+  const expected = encoder.encode(secret);
+  return given.byteLength === expected.byteLength
+    ? crypto.subtle.timingSafeEqual(given, expected)
+    : !crypto.subtle.timingSafeEqual(given, given);
 }
 
 // Reads the request body up to `limit` bytes without buffering past it —
 // an attacker can omit or lie about Content-Length, so this is the
-// authoritative cap (the header check above is just a cheap fast-path).
+// authoritative cap (the header check in handleIngest is a cheap fast-path).
 async function readBodyWithLimit(
   request: Request,
   limit: number
@@ -244,8 +245,13 @@ async function readBodyWithLimit(
 }
 
 async function handleIngest(request: Request, env: Env): Promise<Response> {
+  // A deployment whose secret was never set must refuse everything. Comparing
+  // against an absent value is not something to leave to type coercion.
+  if (!env.INGEST_TOKEN) {
+    return new Response("ingest is not configured", { status: 503 });
+  }
   const token = request.headers.get("X-Devcard-Token");
-  if (!token || !timingSafeEqual(token, env.INGEST_TOKEN)) {
+  if (!token || !tokenMatches(token, env.INGEST_TOKEN)) {
     return new Response("unauthorized", { status: 401 });
   }
 
@@ -259,12 +265,18 @@ async function handleIngest(request: Request, env: Env): Promise<Response> {
     return new Response("payload too large", { status: 413 });
   }
 
-  let body: { events: unknown; repo_count?: unknown; source_id?: unknown };
+  let parsed: unknown;
   try {
-    body = JSON.parse(read.text);
+    parsed = JSON.parse(read.text);
   } catch {
     return new Response("bad json", { status: 400 });
   }
+  // `null`, `[]`, `"x"` and `42` are all valid JSON. Reading `.events` off
+  // `null` threw, and an uncaught throw is a 500 rather than a rejection.
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return new Response("body must be a JSON object", { status: 400 });
+  }
+  const body = parsed as { events?: unknown; repo_count?: unknown; source_id?: unknown };
 
   if (!Array.isArray(body.events)) {
     return new Response("events must be an array", { status: 400 });
@@ -404,10 +416,11 @@ async function handleEmbed(request: Request, env: Env, url: URL): Promise<Respon
   const t = STRINGS[lang];
   const data = await loadCardData(env, t.locale);
   const strip = stripLayout(data.languages, data.totalLines);
-  const html = embedHtml(data, strip, url.origin, env.GITHUB_USERNAME, theme, t.other);
+  const html = embedHtml(strip, url.origin, env.GITHUB_USERNAME, theme, t.other);
   return new Response(html + "\n", {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
+      "X-Content-Type-Options": "nosniff",
       // Short: this is read by a scheduled job, not by a page, and a stale
       // answer would be baked into someone's README until the next run.
       "Cache-Control": "public, max-age=60",
@@ -470,6 +483,12 @@ async function handleSvg(
     headers: {
       "Content-Type": "image/svg+xml; charset=utf-8",
       "Cache-Control": "public, max-age=300, s-maxage=300",
+      // Opened directly, an SVG is a document that could run script. Nothing
+      // dynamic reaches the markup unescaped, and this makes that a property
+      // of the response too: no script, no external fetch — only the inline
+      // <style> and the avatar's data: URI the card is built from.
+      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+      "X-Content-Type-Options": "nosniff",
       // For caches downstream of this Worker (the browser, GitHub's image
       // proxy, corporate proxies): the body genuinely depends on the header.
       // This Worker's own cache does NOT rely on it — see cacheKeyFor.
