@@ -40,7 +40,9 @@ jobs:
     name: seal
     # A failed verify is usually a missing disclosure, which is exactly when the
     # explanation is needed. If verify failed before uploading, the download fails.
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == 'failure' }}
+    # Dependabot is exempt from the disclosure in scpe.yml, so there is nothing to
+    # post on its pull requests.
+    if: ${{ (github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == 'failure') && github.event.workflow_run.actor.login != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # A job-level permissions block REPLACES the workflow default (it does not merge),

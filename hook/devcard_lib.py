@@ -254,7 +254,10 @@ def count_lines(text):
 _SHELL_SPLIT = re.compile(r"&&|\|\||[;\n|]")
 # A segment that actually *invokes* `git commit`, tolerating a path-qualified
 # binary and leading flags (`git -C /repo commit`, `git --no-pager commit`).
-_GIT_COMMIT = re.compile(r"^\s*(?:\S*[/\\])?git(?:\.exe)?\s+(?:-\S+\s+\S+\s+|-\S+\s+)*commit\b")
+# A flag's value may not itself start with `-`. Without that rule the flag group
+# could split `-a -b` two ways, and a command like `git -x -x -x … x` backtracked
+# exponentially — enough to stall the capture hook (CodeQL py/redos).
+_GIT_COMMIT = re.compile(r"^\s*(?:\S*[/\\])?git(?:\.exe)?\s+(?:-\S+\s+(?:[^-\s]\S*\s+)?)*commit\b")
 
 
 def counts_as_commit(command):

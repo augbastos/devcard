@@ -1,5 +1,7 @@
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -145,6 +147,17 @@ class TestCountsAsCommit(unittest.TestCase):
     def test_unrelated_command(self):
         self.assertFalse(lib.counts_as_commit("git status"))
         self.assertFalse(lib.counts_as_commit(""))
+
+    def test_a_pathological_command_cannot_stall_the_hook(self):
+        # The flag group used to backtrack exponentially on repeated flags. Run
+        # in a child process so a regression fails on the timeout instead of
+        # hanging the whole suite.
+        code = "import devcard_lib as lib; print(lib.counts_as_commit('git ' + '-! ' * 200 + 'x'))"
+        out = subprocess.run(
+            [sys.executable, "-S", "-c", code], cwd=os.path.dirname(os.path.abspath(__file__)),
+            capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(out.stdout.strip(), "False", out.stderr)
 
 
 class TestToolFailed(unittest.TestCase):
