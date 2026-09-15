@@ -1,5 +1,6 @@
-import { SELF, env } from "cloudflare:test";
+import { SELF, createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
+import worker from "../src/index";
 import { resetDb, ev, ingestRequest, TOKEN, WRONG_TOKEN } from "./helpers";
 
 async function seed(): Promise<void> {
@@ -36,6 +37,15 @@ describe("/svg rendering", () => {
   it("404s a user that is not the configured owner", async () => {
     const res = await SELF.fetch("https://card.example/svg?user=someone-else");
     expect(res.status).toBe(404);
+  });
+
+  it("forbids script and external loads when the SVG is opened as a document", async () => {
+    const res = await SELF.fetch("https://card.example/svg");
+    const csp = res.headers.get("Content-Security-Policy") ?? "";
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).not.toContain("script-src");
+    expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(await res.text()).not.toMatch(/<script|\son[a-z]+=/i);
   });
 
   it("answers HEAD with the real headers and no body", async () => {
@@ -182,6 +192,52 @@ describe("ingest guard rails", () => {
 
   it("rejects a non-array events field", async () => {
     expect((await SELF.fetch(ingestRequest({ events: {} }))).status).toBe(400);
+  });
+
+  it("rejects valid JSON that is not an object instead of throwing", async () => {
+    // `null` used to reach `body.events` and throw — an uncaught 500.
+    for (const raw of ["null", "[]", '"events"', "42", "true"]) {
+      const res = await SELF.fetch(ingestRequest(null, TOKEN, raw));
+      expect(res.status, raw).toBe(400);
+    }
+  });
+
+  it("rejects a token of the right length and a prefix of the right token", async () => {
+    const sameLength = "x".repeat(new TextEncoder().encode(TOKEN).byteLength);
+    expect((await SELF.fetch(ingestRequest({ events: [] }, sameLength))).status).toBe(401);
+    expect((await SELF.fetch(ingestRequest({ events: [] }, TOKEN.slice(0, -1)))).status).toBe(401);
+    expect((await SELF.fetch(ingestRequest({ events: [] }, TOKEN + "x"))).status).toBe(401);
+  });
+
+  it("fails closed when the deployment has no INGEST_TOKEN secret", async () => {
+    // Called directly so the binding can be removed for this one request.
+    const ctx = createExecutionContext();
+    const res = await worker.fetch(ingestRequest({ events: [] }, ""), { ...env, INGEST_TOKEN: "" }, ctx);
+    await waitOnExecutionContext(ctx);
+    expect(res.status).toBe(503);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM events").first("n")).toBe(0);
+  });
+
+  it("answers an honest oversized Content-Length before reading the body", async () => {
+    const req = new Request("https://card.example/ingest", {
+      method: "POST",
+      headers: { "X-Devcard-Token": TOKEN, "Content-Length": String(300 * 1024) },
+      body: "x".repeat(300 * 1024),
+    });
+    expect((await SELF.fetch(req)).status).toBe(413);
+  });
+
+  it("only routes the methods each path documents", async () => {
+    expect((await SELF.fetch("https://card.example/ingest")).status).toBe(404);
+    expect((await SELF.fetch("https://card.example/svg", { method: "POST" })).status).toBe(404);
+  });
+
+  it("leaves the published repo count alone when a batch carries none", async () => {
+    // The installer's smoke test posts an empty batch; it must not reset the card.
+    await SELF.fetch(ingestRequest({ events: [], repo_count: 40, source_id: "abcd1234" }));
+    await SELF.fetch(ingestRequest({ events: [] }));
+    const row = await env.DB.prepare("SELECT repo_count FROM stats_snapshot WHERE id = 1").first();
+    expect((row as { repo_count: number }).repo_count).toBe(40);
   });
 
   it("rejects a batch above the documented limit", async () => {

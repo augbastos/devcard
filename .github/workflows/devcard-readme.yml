@@ -6,9 +6,24 @@ name: devcard readme
 # follow the data on their own — this is what moves them.
 #
 # Weekly, not daily: every slice's pixels are fetched live on each view, so what
-# goes stale between runs is only the proportions and the percentages, and a
-# language mix does not move far in a week. A daily bot commit would buy a
-# fraction of a point and cost a commit a day in the repository's history.
+# goes stale between runs is only the proportions and the percentages.
+#
+# It never pushes to main. main is protected by a ruleset (pull request, squash,
+# required checks), and this workflow goes through the same door as a person:
+# it regenerates the block and, only if the file changed, opens or updates ONE
+# pull request on a fixed branch. That pull request runs CI like any other.
+#
+# Why a GitHub App token rather than GITHUB_TOKEN: GitHub does not start
+# workflows for events caused by GITHUB_TOKEN, so a pull request it opened would
+# never get its required checks and could never merge. The App is scoped to this
+# repository with contents + pull-requests write, and its token expires with the
+# job. Setup: docs/development.md. Until it exists, the job reports whether the
+# README is stale in the run summary and changes nothing.
+#
+# peter-evans/create-pull-request is the widely used, maintained action for
+# exactly this — it creates the branch, detects "no change", and updates the
+# open pull request instead of stacking new ones. Pinned by SHA like every other
+# action here.
 
 on:
   schedule:
@@ -16,7 +31,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: devcard-readme
@@ -24,20 +39,60 @@ concurrency:
 
 jobs:
   refresh:
+    name: refresh
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The App's private key lives in this environment, which only accepts runs
+    # from main — a workflow on any other branch cannot read it.
+    environment: readme-bot
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Regenerate the card block
-        run: python scripts/refresh_readme.py
+        run: python3 scripts/refresh_readme.py
 
-      - name: Commit if it changed
+      - name: Report when no bot is configured
+        if: vars.DEVCARD_BOT_CLIENT_ID == ''
         run: |
           if git diff --quiet -- README.md; then
-            echo "language bar unchanged"
-            exit 0
+            echo "The README's card block is current." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "The README's card block is stale. Configure the bot (docs/development.md) or run scripts/refresh_readme.py locally." >> "$GITHUB_STEP_SUMMARY"
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore(readme): refresh the language bar" -- README.md
-          git push
+
+      - name: Mint a short-lived App token
+        id: app-token
+        if: vars.DEVCARD_BOT_CLIENT_ID != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.DEVCARD_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.DEVCARD_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Open or update the refresh pull request
+        if: vars.DEVCARD_BOT_CLIENT_ID != ''
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          add-paths: README.md
+          branch: bot/refresh-readme-card
+          delete-branch: true
+          sign-commits: true
+          commit-message: "chore(readme): refresh the language bar"
+          title: "chore(readme): refresh the language bar"
+          body: |
+            ## What this changes
+
+            Regenerates the hoverable card block in `README.md` from the live
+            Worker (`scripts/refresh_readme.py`): the slice widths and the
+            per-language tooltip text. Nothing else.
+
+            ## AI use
+
+            - [ ] I used generative AI
+            - [x] I did not use generative AI
+
+            <sub>Opened by `.github/workflows/devcard-readme.yml`.</sub>

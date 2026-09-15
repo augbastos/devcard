@@ -1,9 +1,19 @@
-.worktrees/
 __pycache__/
 *.pyc
 node_modules/
 .wrangler/
 *.db
-.dev.vars
-docs/superpowers/
+
+# Deployment config and local secrets. install.py renders wrangler.jsonc from
+# the tracked wrangler.example.jsonc; the other two names are what Wrangler
+# would also read, so an old or hand-made copy can never be committed either.
+worker/wrangler.jsonc
+worker/wrangler.json
+worker/wrangler.toml
+.dev.vars*
+.env*
+
+# Local agent tooling and internal notes, never part of the public repository.
+.worktrees/
 .superpowers/
+docs/superpowers/

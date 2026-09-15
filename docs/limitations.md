@@ -16,14 +16,17 @@ to-do list.
 - **The two capture modes are exclusive per machine.** Running both would count
   the same lines twice; `~/.claude/devcard/mode` is what keeps the git hook
   quiet on a Claude Code machine.
-- **`worker/wrangler.toml` is edited by `setup.py`** with your `database_id` and
-  GitHub username. It is your fork's deployment config and belongs committed
-  there, but it does mean `git status` is not clean after setup.
 - **Raw events are never deleted.** Deliberate, and measured — see
   [event retention](retention.md).
 - **The repo count includes private repositories**, while the card's
   `N repos →` link goes to your public profile, so a visitor sees a shorter
   list than the number — see [privacy and security](privacy-and-security.md).
+- **One card per Worker.** A deployment renders a single GitHub username;
+  `?user=` only confirms it. devcard is deliberately not a multi-tenant service.
+- **The last edits reach the Worker up to about half a minute late** in
+  `claude` mode. The syncer is throttled to one run per 20 seconds and makes a
+  final pass when that window closes; a machine that sleeps or shuts down inside
+  the window sends those events on its next sync instead.
 - **Links inside the card don't click** when embedded via `<img>` — a browser
   limitation of anything loaded that way. Wrapping the image in a link makes
   the whole card clickable, if that is enough.

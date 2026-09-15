@@ -1,8 +1,11 @@
 {
   "name": "devcard-worker",
   "version": "1.0.0",
-  "description": "devcard worker — renders the live SVG card from D1 rollups",
+  "description": "devcard worker: renders the live SVG card from D1 rollups",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
@@ -11,10 +14,10 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.22.0",
-    "@cloudflare/workers-types": "^5.20260901.1",
-    "typescript": "^5.5.0",
+    "@cloudflare/vitest-plugin": "^1.1.10",
+    "@cloudflare/workers-types": "^5.20260915.1",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.11",
-    "wrangler": "^4.127.1"
+    "wrangler": "^4.132.0"
   }
 }

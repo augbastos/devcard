@@ -1,0 +1,4 @@
+# Normalise every text file to LF, in the repository and in working trees.
+# The hook suite runs on Windows CI, where git would otherwise check files out
+# with CRLF and hand the tests different bytes than Linux sees.
+* text=auto eol=lf

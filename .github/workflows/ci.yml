@@ -1,13 +1,15 @@
 name: ci
 
-# The product's own CI. The scpe / scpe-seal workflows next to this one check
-# that a pull request discloses AI use — they say nothing about whether the code
-# works, so they are not a substitute for this.
+# The product's own CI: the Python hook and installer, and the Worker. Nothing
+# here touches Cloudflare — the Worker suite runs in workerd against a local D1
+# through @cloudflare/vitest-plugin — so no account and no secret is involved,
+# and a fork's pull request runs everything like any other.
 #
-# Deliberately small: two jobs, no services, no deploy. Nothing here touches
-# Cloudflare — the Worker suite runs against workerd and a local D1 through
-# @cloudflare/vitest-pool-workers, so no account and no secret is involved, and
-# a fork's pull request runs the full suite like any other.
+# The scpe workflows next to this one check AI-use disclosure, and security.yml
+# holds the scanners; neither says anything about whether the code works.
+#
+# Every `uses:` is pinned to a full commit SHA, with the release it came from in
+# a comment. Dependabot (github-actions ecosystem) keeps both current.
 
 on:
   pull_request:
@@ -24,22 +26,26 @@ concurrency:
 
 jobs:
   hook:
-    name: hook (python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
-    # A hung job would otherwise run for the 6-hour default. Both suites take
-    # well under a minute; this is a runaway guard, not a budget.
+    name: hook (${{ matrix.os }}, python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}-latest
+    # A runaway guard, not a budget: the suite takes well under a minute.
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        # The floor setup.py enforces, the current stable, and the newest.
-        python-version: ["3.9", "3.11", "3.13"]
+        # The floor install.py enforces (a test keeps the two in step) and the
+        # newest release, on Linux and on Windows. Windows is not a courtesy:
+        # the capture hook detaches differently there, paths use backslashes and
+        # drive letters, and the token file is protected by an ACL instead of
+        # mode bits.
+        os: [ubuntu, windows]
+        python-version: ["3.11", "3.14"]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -51,38 +57,79 @@ jobs:
           git config --global user.name "devcard ci"
           git config --global init.defaultBranch main
 
-      - name: Run the hook test suite
+      - name: Run the hook and installer test suites
         run: python -m unittest discover -s hook -p "test_*.py" -v
 
+  python-lint:
+    name: python lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Ruff (rules in ruff.toml)
+        # pipx ships on the hosted runner; the version is pinned here.
+        run: pipx run ruff==0.16.7 check --output-format github .
+
   worker:
-    name: worker
+    name: worker (node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # engines.node in worker/package.json (a test keeps the two in step),
+        # and the current LTS.
+        node-version: ["22", "24"]
     defaults:
       run:
         working-directory: worker
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "20"
+          node-version: ${{ matrix.node-version }}
           cache: npm
           cache-dependency-path: worker/package-lock.json
 
-      - name: Install the pinned toolchain
+      - name: Install the locked toolchain
+        # worker/.npmrc sets ignore-scripts, so no dependency's install script runs.
         run: npm ci
 
-      - name: Typecheck the Worker
-        run: npx tsc --noEmit
-
-      - name: Typecheck the tests
-        run: npx tsc --noEmit -p test/tsconfig.json
+      - name: Typecheck the Worker and the tests
+        run: npm run typecheck
 
       - name: Run the Worker test suite
-        # Covers ingest auth, payload validation, body/batch caps, event
-        # identity, the cache key, rendering, escaping and the rollup rebuild —
-        # against real workerd and a real local D1.
-        run: npx vitest run
+        # Ingest auth, payload validation, body/batch caps, event identity, the
+        # cache key, rendering, escaping and the rollup rebuild — against real
+        # workerd and a real local D1.
+        run: npm test
+
+      - name: Bundle the Worker as a deploy would
+        # Catches a Worker that typechecks and passes its tests but that
+        # Wrangler cannot bundle from the committed template.
+        run: npx wrangler deploy --dry-run --config wrangler.example.jsonc --outdir "$RUNNER_TEMP/bundle"
+
+  ci-ok:
+    # The one check the branch ruleset requires from this workflow. Matrix job
+    # names change whenever a version is added or dropped, and a required check
+    # that no longer exists blocks every pull request; this name never changes.
+    name: ci-ok
+    if: always()
+    needs: [hook, python-lint, worker]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Every job passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          for result in $RESULTS; do
+            [ "$result" = "success" ] || exit 1
+          done

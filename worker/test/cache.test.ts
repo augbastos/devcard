@@ -144,7 +144,7 @@ describe("cache key", () => {
       const first = await body("", EN);
       await bumpLines();
       expect(await body("?nonsense=1&v=2", EN)).toBe(first);
-      expect(await body("?user=augbastos", EN)).toBe(first);
+      expect(await body(`?user=${env.GITHUB_USERNAME}`, EN)).toBe(first);
       // Invalid values collapse onto the default they render as.
       expect(await body("?theme=nope&layout=nope", EN)).toBe(first);
     });

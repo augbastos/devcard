@@ -17,14 +17,13 @@ import devcard_lib as lib
 
 SYNC_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "devcard_sync.py")
 SYNC_MARKER = os.path.normpath(os.path.expanduser("~/.claude/devcard/last-sync-spawn"))
-SYNC_THROTTLE_SECONDS = 20
 
 
 def maybe_spawn_sync():
     """Spawn the background syncer at most once per throttle window."""
     now = time.time()
     try:
-        if now - os.stat(SYNC_MARKER).st_mtime < SYNC_THROTTLE_SECONDS:
+        if now - os.stat(SYNC_MARKER).st_mtime < lib.SYNC_THROTTLE_SECONDS:
             return
     except OSError:
         pass

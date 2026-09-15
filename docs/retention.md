@@ -1,8 +1,8 @@
 # Event retention
 
-Short version: **nothing is deleted, on purpose.** This file records the
-measurements behind that decision so the next person does not have to guess,
-and names the trigger that should change it.
+Short version: **nothing is deleted, on purpose.** This page gives the capacity
+reasoning behind that, a way to measure your own installation, and the trigger
+that should change the decision.
 
 ## What grows
 
@@ -15,33 +15,49 @@ and names the trigger that should change it.
 | `agg_day` | D1 | one row per active day | **yes — pruned** |
 
 `agg_day` was the only rollup that would have grown forever (a row a day), and
-the nightly rebuild already deletes everything older than the heatmap window
-plus a fortnight of slack (`AGG_DAY_KEEP_DAYS` in `worker/src/index.ts`).
+the nightly rebuild deletes everything older than the heatmap window plus a
+fortnight of slack (`AGG_DAY_KEEP_DAYS` in `worker/src/index.ts`).
 
-## Measured rate
+## Capacity, in orders of magnitude
 
-From the reference installation, 2026-07-05 to 2026-09-07 (65 days of daily
-use in `claude` mode, which is the chattier of the two capture modes — it
-records one row per agent tool call rather than one per commit):
-
-```
-21,066 events over 65 days  =  ~325 events/day  =  ~119,000/year
-local events.db: 1.16 MB total, including project_key and both indexes
-```
-
-Row width in D1 is narrower than local (no `project_key`, no `synced`; plus
-`source_id`), so:
+`claude` mode is the chattier capture mode — one row per agent tool call rather
+than one per commit — so it sets the upper bound. A reference installation used
+for daily, agent-heavy work produced **a few hundred events a day**. Rounded up
+generously:
 
 ```
-projected D1 growth: roughly 6-7 MB per year of heavy daily use
-D1 free tier storage: 5 GB
+~500 events/day            →  ~200,000 events/year
+one D1 events row          ≈  100 bytes, indexes included
+                           →  ~20 MB/year
+D1 free-tier storage       =  5 GB   →  centuries of headroom
 ```
 
-That is on the order of **centuries** of headroom, so storage is not the
-constraint. Nor are reads: the card renders exclusively from rollups, so a
-render costs a fixed handful of rows no matter how large `events` is. The only
-thing that touches every row is the nightly rebuild — one pass over ~119k rows
-a day, against a 5,000,000 reads/day allowance.
+Storage is not the constraint, and neither are reads: the card renders from
+rollups only, so a render costs a fixed handful of rows no matter how large
+`events` becomes. The only full scans are the nightly rebuild's: four passes over
+`events`, so about 800,000 rows read a night at that rate, against a free-tier
+allowance of 5,000,000 rows read per day.
+
+The per-row estimate is deliberately pessimistic: a D1 row here is six integers,
+a short language name and a 32-character installation id, plus the unique index
+on `(source_id, client_event_id)`.
+
+## Measure your own
+
+The numbers above are an envelope, not a promise. Your installation's own,
+without trusting anybody's estimate:
+
+```bash
+cd worker
+npx wrangler d1 info devcard            # database size, as Cloudflare bills it
+npx wrangler d1 execute devcard --remote --command \
+  "SELECT COUNT(*) AS events, (MAX(ts) - MIN(ts)) / 86400 AS days,
+          COUNT(*) * 86400.0 / MAX(1, MAX(ts) - MIN(ts)) AS per_day
+   FROM events"
+```
+
+Divide the size by `events` for your real bytes per row, and multiply `per_day`
+by 365 for your yearly growth.
 
 ## Why deleting would cost more than it saves
 
@@ -59,16 +75,18 @@ Making retention safe therefore means more than a `DELETE`:
 3. a way to tell an already-compacted range from a live one, so a re-run does
    not double-count the base.
 
-That is a real amount of machinery, and it buys nothing at 6 MB/year. Building
-it now would trade a working invariant ("the rollups can always be rebuilt from
-the events") for complexity that solves no observed problem.
+That is a real amount of machinery, and at tens of megabytes a year it buys
+nothing. Building it now would trade a working invariant ("the rollups can
+always be rebuilt from the events") for complexity that solves no observed
+problem.
 
 ## The trigger
 
 Revisit if any of these becomes true:
 
-- `events` passes ~5 million rows (roughly 40 years at the measured rate, or
-  much sooner for a shared/multi-user deployment);
+- `events` passes ~1 million rows — where four nightly passes approach the
+  free tier's daily read allowance; about five years at the rate above, much
+  sooner for a shared deployment;
 - the nightly rebuild starts approaching D1's daily read allowance;
 - a deployment needs the raw history gone for a privacy or legal reason.
 
@@ -79,21 +97,19 @@ bare `DELETE`.
 ## What is already safe to prune
 
 - `agg_day` — pruned nightly, no action needed.
-- Local `known_repos` — 75 rows after two months; it stores raw working
-  directories, and only the *count* of distinct git roots is ever published.
-- Local `events` — a user who wants their local history gone can delete
-  `~/.claude/devcard/events.db`. Since the composite `(source_id,
-  client_event_id)` identity landed, that is safe: `~/.claude/devcard/source-id`
-  survives the deletion, so the restarted rowid sequence continues in the same
-  namespace and already-synced events are neither re-sent nor re-counted. Before
-  that change the same act silently dropped the first N events of the new
-  database as duplicates.
+- Local `known_repos` — stores raw working directories and stays small; only the
+  *count* of distinct git roots is ever published.
+- Local `events` — delete `~/.claude/devcard/events.db` if you want your local
+  history gone. The hook notices the new database and retires the old
+  `source-id`, so the restarted row ids go out under a fresh namespace: nothing
+  already synced is re-counted, and nothing new is mistaken for a duplicate.
+  Events that were still unsynced go with the file.
 
 ## Read performance, locally
 
-`get_unsynced_events` runs every ~20 seconds and asks `WHERE synced = 0`. On a
-table that only grows that was a full scan of the entire history several times
-a minute. `init_db` now creates a partial index:
+The syncer asks for `WHERE synced = 0` every time it runs. On a table that only
+grows, that would be a scan of the entire history several times a minute, so
+`init_db` creates a partial index:
 
 ```sql
 CREATE INDEX IF NOT EXISTS idx_events_unsynced ON events(id) WHERE synced = 0

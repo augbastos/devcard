@@ -212,7 +212,9 @@ async function hasSponsors(user: string): Promise<boolean> {
 }
 
 async function fetchStars(user: string, repo: string): Promise<number | null> {
-  const url = `https://api.github.com/repos/${user}/${repo}`;
+  // Both come from configuration, not from a request — but a pinned repo is a
+  // free-text D1 row, so it is encoded rather than trusted to be a path segment.
+  const url = `https://api.github.com/repos/${encodeURIComponent(user)}/${encodeURIComponent(repo)}`;
   const cache = (caches as unknown as { default: Cache }).default;
   const cacheKey = new Request(url + "#devcard-stars");
   const hit = await cache.match(cacheKey);

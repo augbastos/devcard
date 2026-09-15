@@ -1,0 +1,31 @@
+# Version updates, on top of the security updates enabled in the repository
+# settings. Two ecosystems, because those are the only dependencies there are:
+# the Worker's npm toolchain and the pinned Actions. The Python side is
+# stdlib-only.
+#
+# `cooldown` waits a week after a release before proposing it — a new version
+# that turns out to be compromised is usually pulled within days. Security
+# updates are not delayed by it.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /worker
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      # Wrangler, the Vitest plugin, workers-types and Vitest move together;
+      # updating one alone is how the lockfile ended up unresolvable before.
+      worker-toolchain:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]

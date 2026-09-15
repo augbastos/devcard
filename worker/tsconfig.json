@@ -1,10 +1,15 @@
 {
   "compilerOptions": {
-    "target": "ES2021",
+    "target": "ES2022",
     "module": "ES2022",
     "moduleResolution": "Bundler",
+    // No DOM: a Worker is not a browser, and lib.dom's globals shadow the
+    // runtime's own (its `SubtleCrypto` has no `timingSafeEqual`).
+    "lib": ["ES2022"],
     "types": ["@cloudflare/workers-types"],
     "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "skipLibCheck": true
   },
   "include": ["src/**/*.ts"]

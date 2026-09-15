@@ -27,7 +27,7 @@
 //     card's last row: the slack falls below the card, where nothing shows it.
 //     Any other position would put that gap inside the card on a narrow column.
 
-import { CardData, LanguageSlice } from "./queries";
+import { LanguageSlice } from "./queries";
 import { Theme } from "./themes";
 import { escapeXml, sliceColor, sliceLabel } from "./svg-utils";
 
@@ -198,7 +198,6 @@ const pctText = (n: number) => String(Math.round(n * 1e4) / 1e4);
  * last regeneration.
  */
 export function embedHtml(
-  data: CardData,
   strip: Strip,
   origin: string,
   user: string,

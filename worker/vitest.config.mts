@@ -1,4 +1,4 @@
-import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
+import { cloudflareTest } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vitest/config";
 
 // Worker tests run inside workerd (the real runtime), against a real local D1 —
@@ -8,13 +8,18 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   plugins: [
     cloudflareTest({
-      wrangler: { configPath: "./wrangler.toml" },
+      wrangler: { configPath: "./wrangler.example.jsonc" },
       miniflare: {
-        // INGEST_TOKEN is a Wrangler secret in production, so it is absent from
-        // wrangler.toml by design. Tests never hardcode the real one: they read
-        // whatever `env.INGEST_TOKEN` holds, so a developer's local .dev.vars
-        // works without its value ever reaching a test file or an assertion.
-        bindings: { INGEST_TOKEN: "test-token" },
+        // Fixed values, so the suite never depends on a real deployment:
+        // INGEST_TOKEN is a Wrangler secret in production and absent from the
+        // config by design; the template's vars are placeholders; and a local
+        // `.dev.vars` must not change what a test sees. TIMEZONE is far enough
+        // from UTC that a day key computed in UTC fails the tests that pin it.
+        bindings: {
+          INGEST_TOKEN: "test-token",
+          GITHUB_USERNAME: "devcard-test",
+          TIMEZONE: "Asia/Tokyo",
+        },
 
         // The card enriches itself from github.com (avatar, sponsors, stars).
         // Every outbound request is answered here instead, so the suite never

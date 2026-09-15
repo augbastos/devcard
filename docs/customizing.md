@@ -33,7 +33,7 @@ Up to three, each a linked box with a live star count:
 
 ```bash
 npx wrangler d1 execute devcard --remote --command \
-  "INSERT INTO pinned_repos (repo, note, position, created_at) VALUES ('wavr', 'privacy-first home presence', 1, strftime('%s','now'))"
+  "INSERT INTO pinned_repos (repo, note, position, created_at) VALUES ('my-project', 'what it does, in a line', 1, strftime('%s','now'))"
 ```
 
 `repo` must be a public repo under your GitHub account, `note` is an optional

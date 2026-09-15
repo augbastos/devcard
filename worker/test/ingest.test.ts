@@ -269,8 +269,9 @@ describe("ingest rollups", () => {
   });
 
   it("keys agg_day by the worker's configured timezone, not by UTC", async () => {
-    // 2025-06-15T23:30:00Z is still the 15th in Europe/Dublin (UTC+1 in June),
-    // so this pins that the day key comes from Intl and not from the raw epoch.
+    // 2025-06-15T23:30:00Z is already the 16th in the suite's TIMEZONE
+    // (Asia/Tokyo, UTC+9) while it is still the 15th in UTC, so this pins that
+    // the day key comes from Intl and not from the raw epoch.
     await post({ source_id: "machine-a", events: [ev({ id: 1, ts: 1750030200, lines_added: 3 })] });
     const day = await env.DB.prepare("SELECT day, lines FROM agg_day").first();
     expect(day).toMatchObject({ day: "2025-06-16", lines: 3 });

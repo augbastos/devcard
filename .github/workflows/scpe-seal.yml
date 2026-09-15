@@ -7,6 +7,11 @@ name: scpe-seal
 # It never checks out the contributor's code, never runs it, and installs nothing. The
 # only binaries it touches are the runner's own pre-installed `python3` and `gh`.
 #
+# Everything it reads comes from an artifact the UNTRUSTED job wrote — and a pull
+# request from a fork can change that job. So the artifact is data, never code: the
+# PR number must be digits before it reaches `gh`, JSON is only ever parsed, and every
+# value reaches the shell through an environment variable, not `${{ }}` interpolation.
+#
 # Why a separate file: a workflow cannot name itself in `workflow_run.workflows`. GitHub
 # fails to register such a file — it shows the file path where the workflow name should
 # be, and every run fails at the workflow level with zero jobs. So the trigger has to
@@ -14,7 +19,11 @@ name: scpe-seal
 #
 # `workflow_run` only fires for a workflow file present on the DEFAULT branch. Merge
 # both files to your default branch before expecting a seal on a pull request.
-on:
+#
+# zizmor flags every `workflow_run` trigger, because the common way to use one is to check
+# out and run the pull request's code with a write token. This job does neither, which is
+# the whole design above; the finding is acknowledged here rather than silenced globally.
+on:  # zizmor: ignore[dangerous-triggers]
   workflow_run:
     workflows: ["scpe"]
     types: [completed]
@@ -22,20 +31,26 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: scpe-seal-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
 jobs:
   seal:                         # TRUSTED — write token; never runs untrusted code
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    name: seal
+    # A failed verify is usually a missing disclosure, which is exactly when the
+    # explanation is needed. If verify failed before uploading, the download fails.
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == 'failure' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # A job-level permissions block REPLACES the workflow default (it does not merge),
+    # so every unlisted scope is none.
     permissions:
-      pull-requests: write
-      # A job-level permissions block REPLACES the workflow default (it does not merge),
-      # so every unlisted scope is set to none. actions/download-artifact@v4 with run-id
-      # needs actions:read to reach a sibling run's artifact — without it the download
-      # fails and the gate never runs.
-      actions: read
+      pull-requests: write # post the seal comment on the pull request
+      actions: read        # download-artifact with run-id reaches the verify run's artifact
     steps:
       - name: Download the verify job's results
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: scpe-results
           run-id: ${{ github.event.workflow_run.id }}
@@ -44,30 +59,29 @@ jobs:
       - name: Post the seal comment (or the gate failure)
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          pr="$(cat pr-number.txt)"
+          pr="$(head -c 16 pr-number.txt | tr -d '[:space:]')"
+          case "$pr" in
+            ''|*[!0-9]*) echo "::error::pr-number.txt is not a pull request number"; exit 1 ;;
+          esac
           # The require DECISION was computed upstream, in the untrusted "verify"
           # job (results.json's gate_pass) — this step only ever READS it, never
           # recomputes it from raw contributor input. Missing key (require=false,
           # the informational path) defaults to "pass": nothing changes.
           gate_pass="$(python3 -c "import json; print(str(json.load(open('results.json')).get('gate_pass', True)).lower())")"
           if [ "$gate_pass" = "false" ]; then
-            # results.json carries its own fail_message (naming the exact §8 status
-            # and the reason behind it, or level 1's missing disclosure) — use it
-            # verbatim; fall back to the generic message only for a results.json
-            # written by an older tag. Either way this is a READ, never a recompute.
+            # results.json carries its own fail_message; fall back to the generic
+            # message only for a results.json written by an older release.
             msg="$(python3 -c "import json; d = json.load(open('results.json')); print(d.get('fail_message') or '❌ Not verifiable — this repository requires a signed SCPE contribution (spec scpe/0.1).')")"
-            gh pr comment "$pr" --repo "${{ github.repository }}" --body "$msg"
+            gh pr comment "$pr" --body "$msg"
             exit 1
           fi
-          # The comment is rendered upstream too, in the same untrusted job, and
-          # posted here byte-for-byte. That does NOT weaken the split: this job
-          # already posted attacker-influenced text before — every field in the seal
-          # comes from the contributor's PR — so moving the rendering does not
-          # change the trust level of the CONTENT, only where the string is built.
-          # What it does change is that the obligation to neutralize that content
-          # (fence escaping, length caps) now sits in one tested renderer instead of
-          # in this YAML. The trusted job stays free of checkouts, installs and
-          # contributor code.
+          # The comment is rendered upstream, in the same untrusted job, and posted
+          # here byte-for-byte. Its content was always contributor-influenced; the
+          # obligation to neutralize it (fence escaping, length caps) sits in SCPE's
+          # tested renderer rather than in this YAML.
           msg="$(python3 -c "import json; print(json.load(open('results.json')).get('comment') or '')")"
-          [ -n "$msg" ] && gh pr comment "$pr" --repo "${{ github.repository }}" --body "$msg"
+          if [ -n "$msg" ]; then
+            gh pr comment "$pr" --body "$msg"
+          fi
