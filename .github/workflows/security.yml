@@ -1,0 +1,94 @@
+name: security
+
+# Three scanners, each covering something the others and GitHub's built-in
+# features do not:
+#
+#   secrets       Gitleaks over the WHOLE history. GitHub secret scanning and
+#                 push protection are on for this repository, but they match
+#                 provider token formats; this project's own secret is a bare
+#                 hex INGEST_TOKEN, which only a generic rule catches.
+#   dependencies  dependency-review on pull requests: a change that introduces a
+#                 known-vulnerable package fails before it merges. Dependabot
+#                 alerts cover the tree that is already on main.
+#   codeql        Static analysis of the Worker (TypeScript), the hook and
+#                 installer (Python), and these workflow files (actions).
+#
+# Nothing here runs contributor code with a write token: every job is read-only
+# except codeql's upload of its own results.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "41 6 * * 2" # weekly, so new rules and advisories reach an idle repository
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets:
+    name: secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the whole history, not the tip
+
+      - name: Gitleaks
+        # The official image, pinned by digest (v8.30.1). No token is handed to
+        # it and it needs none.
+        uses: docker://ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+        env:
+          # The checkout belongs to the runner user and the container runs as
+          # root, so git would refuse the repository as "dubious ownership".
+          # The image's own safe.directory lives in a HOME the runner replaces.
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: safe.directory
+          GIT_CONFIG_VALUE_0: /github/workspace
+        with:
+          args: git --redact --no-banner --verbose /github/workspace
+
+  dependencies:
+    name: dependencies
+    # Also a required check, like `secrets`. It only runs on pull requests,
+    # which is the only place a required check is evaluated.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: moderate
+
+  codeql:
+    name: codeql (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write # upload the analysis to code scanning
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [actions, javascript-typescript, python]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          queries: security-extended
+
+      - uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        with:
+          category: /language:${{ matrix.language }}

@@ -5,25 +5,33 @@ name: scpe
 # Checks that every pull request carries an AI-use disclosure: an `Assisted-by:` commit
 # trailer, or a checked box in the PR template. Nothing is signed, no key is needed, and
 # nothing is installed on the runner — the Action runs one stdlib-only Python file out of
-# its own checkout at the tag pinned below.
+# its own checkout.
 #
-# It is a GATE: `require: "true"` means a pull request with no AI-use disclosure fails
-# this check. Set it back to "false" to go back to an informational comment.
+# `require: "true"` computes a gate decision here; the companion scpe-seal.yml acts on it.
 #
 # TWO FILES, NOT ONE. The companion scpe-seal.yml holds the write token and posts the
 # comment; this file runs contributor code with no secrets. They cannot be merged: a
 # workflow that names itself in `workflow_run.workflows` fails to register with GitHub.
+#
+# The Action is pinned to the commit of release v0.2.3, not to the tag: a tag can be moved,
+# a commit SHA cannot.
 on:
   pull_request:
 
 permissions:
   contents: read
 
+concurrency:
+  group: scpe-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   verify:                       # UNTRUSTED — no secrets; safe to run contributor code
+    name: verify                # a required status check: keep the name stable
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false   # never write the token into .git/config
           # Level 1 reads the commit messages in the PR range, and level 2 (if this repo
@@ -32,17 +40,22 @@ jobs:
           fetch-depth: 0
 
       - id: seal
-        uses: augbastos/scpe@v0.2.3
+        uses: augbastos/scpe@b98b50e429a7de2340b78c3c14e5c16dffe6e408 # v0.2.3
         with:
           level: "1"                   # 1 = disclosure lint · 2 = signed envelope required
-          require: "true"             # "true" makes a missing disclosure fail the check
+          require: "true"              # "true" makes a missing disclosure fail the gate
 
       # Hand the verdict + PR number to the trusted job. The number MUST travel in the
       # artifact: github.event.workflow_run.pull_requests is empty for fork PRs.
-      - run: echo "${{ github.event.pull_request.number }}" > pr-number.txt
-      - uses: actions/upload-artifact@v4
+      - name: Record the pull request number
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: echo "$PR_NUMBER" > pr-number.txt
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: scpe-results
           path: |
             results.json
             pr-number.txt
+          retention-days: 7
