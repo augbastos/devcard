@@ -137,6 +137,23 @@ export function segIndex(url: URL): number {
   return Number.isInteger(raw) && raw >= 0 && raw < 1000 ? raw : 0;
 }
 
+/** `?w=` — how wide the README says this piece is, in millionths of the card
+ *  (the markup's percentage × 10,000), or null when absent or implausible.
+ *
+ * A piece's rendered height is the column width × its share × height ÷ its
+ * SVG width. The share is frozen in the README until the next refresh, while
+ * the SVG width used to follow the live data, so every change in the language
+ * mix gave each slice a different height and the bar broke into steps. Drawing
+ * the piece at the width the markup declares keeps all of them one height
+ * however stale the block is. Blocks generated before this parameter existed
+ * fall back to the live width. */
+export function pieceWidth(url: URL): number | null {
+  const raw = url.searchParams.get("w");
+  if (raw === null || !/^\d{1,7}$/.test(raw)) return null;
+  const width = Number(raw);
+  return width >= 1 && width <= 1e6 ? width : null;
+}
+
 // The variant a request resolves to, as a cache key.
 //
 // The Cache API keys on the request URL, so the previous `cache.match(request)`
@@ -169,7 +186,8 @@ export function cacheKeyFor(
   allLangs = false,
   part: Part | null = null,
   side: "l" | "r" = "l",
-  index = 0
+  index = 0,
+  width: number | null = null
 ): Request {
   const key = new URL(url.origin);
   key.pathname = "/svg";
@@ -187,6 +205,7 @@ export function cacheKeyFor(
     key.searchParams.set("part", part);
     if (part === "cap") key.searchParams.set("side", side);
     if (part === "seg") key.searchParams.set("i", String(index));
+    if (part !== "body" && width !== null) key.searchParams.set("w", String(width));
   }
   return new Request(key.toString(), { method: "GET" });
 }

@@ -5,8 +5,9 @@
 
 import { SELF } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { resetDb, ev, ingestRequest } from "./helpers";
+import { resetDb, ev, ingestRequest, purgeCardCache } from "./helpers";
 import { stripLayout, MIN_SEG, W, INNER, PAD } from "../src/render-split";
+import { cacheKeyFor, capSide, partName, pieceWidth, segIndex } from "../src/variants";
 import { LanguageSlice } from "../src/queries";
 
 const BASE = "https://card.example";
@@ -58,6 +59,18 @@ async function seed(): Promise<void> {
   );
   expect(res.status).toBe(200);
   expect((await res.json<{ inserted: number }>()).inserted).toBe(events.length);
+}
+
+/** Cache entries keyed on a declared width are not in `purgeCardCache`'s
+ *  enumerable set, so a test that requests them removes its own. */
+async function purgeDeclaredWidths(urls: string[]): Promise<void> {
+  const cache = await caches.open("default");
+  for (const raw of urls) {
+    const url = new URL(raw);
+    const part = partName(url, "wide");
+    const key = cacheKeyFor(url, "en", "default", "wide", false, part, capSide(url), segIndex(url), pieceWidth(url));
+    await cache.delete(key);
+  }
 }
 
 function imgTags(html: string): string[] {
@@ -180,6 +193,37 @@ describe("/embed", () => {
     expect(attr(tags[0], "width")).toBe("100%");
   });
 
+  it("keeps every piece one height after the live proportions move", async () => {
+    // The regression: the README froze each slice's width, the SVG followed the
+    // live data, and after a week of new lines every slice rendered at its own
+    // height — the bar broke into steps. The block is generated, then the mix
+    // shifts hard, then the same markup is rendered again.
+    const tags = imgTags(await (await SELF.fetch(`${BASE}/embed`)).text()).slice(1);
+    const drift = [ev({ id: 900, language: "Markdown", lines_added: 20000 }), ev({ id: 901, language: "Rust", lines_added: 9000 })];
+    expect((await SELF.fetch(ingestRequest({ events: drift, source_id: "driftsource" }))).status).toBe(200);
+    await purgeCardCache();
+
+    const column = 838; // any column width; GitHub's is about this
+    const heights: number[] = [];
+    const keys: string[] = [];
+    try {
+      for (const tag of tags) {
+        const src = (attr(tag, "src") ?? "").replaceAll("&amp;", "&");
+        keys.push(src);
+        const svg = await (await SELF.fetch(src)).text();
+        const w = Number(svg.match(/<svg[^>]*width="([\d.]+)"/)?.[1]);
+        const h = Number(svg.match(/<svg[^>]*height="([\d.]+)"/)?.[1]);
+        const pct = Number((attr(tag, "width") ?? "0").replace("%", ""));
+        heights.push(((column * pct) / 100) * (h / w));
+      }
+    } finally {
+      await purgeDeclaredWidths(keys);
+    }
+    const tallest = Math.max(...heights);
+    const shortest = Math.min(...heights);
+    expect(tallest - shortest).toBeLessThan(0.01);
+  });
+
   it("carries the whole breakdown in the body's alt text", async () => {
     const tags = imgTags(await (await SELF.fetch(`${BASE}/embed`)).text());
     const alt = attr(tags[0], "alt") ?? "";
@@ -275,5 +319,28 @@ describe("/svg?part=", () => {
   it("treats a nonsense index as the first slice rather than failing", async () => {
     const junk = await get("part=seg&i=__proto__");
     expect(junk).toContain("#3572A5");
+  });
+
+  it("draws a piece at the width its markup declares, and caches it per width", async () => {
+    const urls = ["part=seg&i=1&w=160806", "part=seg&i=1&w=100000", "part=cap&side=r&w=40000"].map(
+      (q) => `${BASE}/svg?layout=wide&${q}`
+    );
+    try {
+      const narrow = await get("part=seg&i=1&w=160806");
+      const wider = await get("part=seg&i=1&w=100000");
+      expect(Number(narrow.match(/<svg[^>]*width="([\d.]+)"/)?.[1])).toBeCloseTo((W * 16.0806) / 100, 3);
+      expect(Number(wider.match(/<svg[^>]*width="([\d.]+)"/)?.[1])).toBeCloseTo(W / 10, 3);
+      const cap = await get("part=cap&side=r&w=40000");
+      expect(Number(cap.match(/<svg[^>]*width="([\d.]+)"/)?.[1])).toBeCloseTo((W * 4) / 100, 3);
+    } finally {
+      await purgeDeclaredWidths(urls);
+    }
+  });
+
+  it("falls back to the live width for a missing or implausible w", async () => {
+    const live = await get("part=seg&i=1");
+    for (const junk of ["0", "-5", "abc", "99999999", "1e3"]) {
+      expect(await get(`part=seg&i=1&w=${junk}`)).toBe(live);
+    }
   });
 });

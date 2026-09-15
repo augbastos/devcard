@@ -8,13 +8,14 @@ import {
   partName,
   capSide,
   segIndex,
+  pieceWidth,
   Part,
 } from "./variants";
 import { pickTheme, themeName } from "./themes";
 import { renderFull, Strings } from "./render";
 import { renderBanner, renderHalf, renderVertical } from "./render-layouts";
 import { renderWide } from "./render-wide";
-import { stripLayout, renderStripCap, renderStripSegment, embedHtml } from "./render-split";
+import { stripLayout, renderStripCap, renderStripSegment, embedHtml, W as STRIP_W } from "./render-split";
 
 export interface Env {
   DB: D1Database;
@@ -444,19 +445,22 @@ function renderPart(
   allLangs: boolean,
   part: Part,
   side: "l" | "r",
-  index: number
+  index: number,
+  width: number | null
 ): string {
   if (part === "body") return renderWide(data, tokens, t, allLangs, true);
 
   const strip = stripLayout(data.languages, data.totalLines);
   if (part === "cap") {
-    return renderStripCap(tokens, side, side === "l" ? strip.capLeftPct : strip.capRightPct);
+    const pct = width !== null ? width / 1e4 : side === "l" ? strip.capLeftPct : strip.capRightPct;
+    return renderStripCap(tokens, side, pct);
   }
 
   const slot = strip.slots[index] ?? null;
   const last = strip.slots.length - 1;
   const end = strip.slots.length === 1 ? "both" : index === 0 ? "l" : index === last ? "r" : null;
-  return renderStripSegment(tokens, slot, slot ? end : null, slot ? slot.width : 1);
+  const px = width !== null ? (STRIP_W * width) / 1e6 : slot ? slot.width : 1;
+  return renderStripSegment(tokens, slot, slot ? end : null, px);
 }
 
 async function handleSvg(
@@ -467,14 +471,15 @@ async function handleSvg(
   allLangs: boolean,
   part: Part | null = null,
   side: "l" | "r" = "l",
-  index = 0
+  index = 0,
+  width: number | null = null
 ): Promise<Response> {
   const t = STRINGS[lang];
   const tokens = pickTheme(theme);
   const data = await loadCardData(env, t.locale);
 
   let svg: string;
-  if (part) svg = renderPart(data, tokens, t, allLangs, part, side, index);
+  if (part) svg = renderPart(data, tokens, t, allLangs, part, side, index, width);
   else if (layout === "wide") svg = renderWide(data, tokens, t, allLangs);
   else if (layout === "banner") svg = renderBanner(data, tokens, t);
   else if (layout === "half") svg = renderHalf(data, tokens, t);
@@ -517,13 +522,14 @@ async function handleSvgCached(request: Request, env: Env, ctx: ExecutionContext
   const part = partName(url, layout);
   const side = capSide(url);
   const index = segIndex(url);
+  const width = part === "cap" || part === "seg" ? pieceWidth(url) : null;
 
   const cache = await caches.open("default");
-  const cacheKey = cacheKeyFor(url, lang, theme, layout, allLangs, part, side, index);
+  const cacheKey = cacheKeyFor(url, lang, theme, layout, allLangs, part, side, index, width);
   const cached = await cache.match(cacheKey);
   if (cached) return cached;
 
-  const response = await handleSvg(env, lang, theme, layout, allLangs, part, side, index);
+  const response = await handleSvg(env, lang, theme, layout, allLangs, part, side, index, width);
   if (response.ok) {
     ctx.waitUntil(cache.put(cacheKey, response.clone()));
   }
