@@ -57,6 +57,8 @@ What "public API" means for devcard, since it is not a library:
   pull requests, and CodeQL for TypeScript, Python and the workflows. Dependabot
   version updates for npm and Actions, with a seven-day cooldown.
 - npm dependency install scripts are disabled for the Worker toolchain.
+- The capture hook's `git commit` detector no longer backtracks exponentially on
+  repeated flags (CodeQL `py/redos`); a crafted command could stall the hook.
 
 ### Added
 
