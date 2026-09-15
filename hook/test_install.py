@@ -222,7 +222,7 @@ class TestSecretFilePermissions(unittest.TestCase):
             path = os.path.join(tmp, "token")
             with open(path, "w", encoding="utf-8") as f:
                 f.write("old")
-            os.chmod(path, 0o644)
+            os.chmod(path, 0o640)  # readable by the group: looser than the installer allows
             install.write_private(path, "new")
             self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
 
