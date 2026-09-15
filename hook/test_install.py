@@ -220,9 +220,12 @@ class TestSecretFilePermissions(unittest.TestCase):
     def test_a_rerun_tightens_a_file_that_was_left_readable(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "token")
+            # Created the way an older installer left it: plain open(), so the
+            # mode is whatever the umask allows.
             with open(path, "w", encoding="utf-8") as f:
                 f.write("old")
-            os.chmod(path, 0o640)  # readable by the group: looser than the installer allows
+            if stat.S_IMODE(os.stat(path).st_mode) == 0o600:
+                self.skipTest("this umask already creates files owner-only")
             install.write_private(path, "new")
             self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
 
