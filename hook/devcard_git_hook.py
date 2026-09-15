@@ -111,8 +111,7 @@ def collect(repo_dir, parents):
     empty, which is the same statement: a merge introduces no content of its
     own. A merge that resolves conflicts by hand can introduce genuinely new
     lines; those are not counted either, which under-reports by a few lines
-    rather than over-reporting by a whole branch. See "Counting rules" in the
-    README.
+    rather than over-reporting by a whole branch. See docs/counting.md.
 
     (Most merges never reach this hook: git runs `post-merge`, not
     `post-commit`, when it creates the merge commit itself. The ones that do
@@ -170,9 +169,12 @@ def main():
                 "lines_removed": 0, "bytes_added": 0,
                 "event_type": "commit", "project_key": project_key,
             })
-            # One batch: a post-commit hook must not sit on the network. A
-            # backlog drains through devcard_sync.py.
-            lib.sync_pending(conn, max_batches=1, timeout=1.5)
+            # A full drain, not one batch. The installed hook line runs this
+            # script in the background (`&`), so the commit never waits on the
+            # network — and nothing else ever sends in git mode, so draining a
+            # single 50-event batch per commit let an offline backlog trail
+            # behind indefinitely.
+            lib.sync_pending(conn)
         finally:
             conn.close()
     except Exception as exc:

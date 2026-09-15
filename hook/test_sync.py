@@ -38,6 +38,13 @@ def setUpModule():
         patcher = mock.patch.object(lib, attr, os.path.join(_MODULE_TMP, name))
         patcher.start()
         _PATCHERS.append(patcher)
+    # A configured endpoint, as install.py leaves behind. Without one the hook
+    # sends nothing at all, which is its own test.
+    # ...and a stand-in token, so no test ever holds the developer's real one.
+    for attr, value in (("WORKER_INGEST_URL", "https://card.example/ingest"), ("INGEST_TOKEN", "test-token")):
+        patcher = mock.patch.object(lib, attr, value)
+        patcher.start()
+        _PATCHERS.append(patcher)
     # A normal installation has an id by the time it captures anything (the
     # first sync creates one). Tests that need the no-id case redirect
     # SOURCE_ID_PATH themselves.
@@ -213,7 +220,7 @@ class TestSyncPayloadPrivacy(unittest.TestCase):
         raw = self._payload_for("C:/work/a-private-client-project/src")
         self.assertNotIn("a-private-client-project", raw)
         self.assertNotIn("project_key", raw)
-        self.assertNotIn("C:/IA", raw)
+        self.assertNotIn("C:/work", raw)
 
     def test_payload_carries_only_the_documented_fields(self):
         body = json.loads(self._payload_for("C:/work/whatever"))
@@ -274,6 +281,26 @@ class TestSyncDraining(unittest.TestCase):
                 "project_key": "C:/work/repo",
             })
         return conn
+
+    def test_an_unconfigured_endpoint_sends_nothing_and_keeps_the_events(self):
+        # There used to be a built-in default URL — the maintainer's own
+        # Worker — so a hook installed without install.py posted its token and
+        # activity to somebody else's deployment.
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = self._db(tmp, 3)
+            try:
+                with mock.patch.object(lib, "WORKER_INGEST_URL", ""), \
+                        mock.patch.object(lib, "ERROR_LOG_PATH", os.path.join(tmp, "errors.log")), \
+                        mock.patch("urllib.request.urlopen") as urlopen:
+                    for _ in range(5):
+                        self.assertFalse(lib.sync_pending(conn))
+                    self.assertFalse(lib.send_to_worker([{"id": 1}], 1, token="t", source="abcdef01"))
+                urlopen.assert_not_called()
+                self.assertEqual(len(lib.get_unsynced_events(conn)), 3)
+                with open(os.path.join(tmp, "errors.log"), encoding="utf-8") as f:
+                    self.assertEqual(len(f.readlines()), 1)  # throttled: one line, not one per attempt
+            finally:
+                conn.close()
 
     def test_a_failed_send_leaves_events_unsynced_for_the_next_attempt(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -405,6 +432,59 @@ class TestLocalSchema(unittest.TestCase):
                 conn = lib.init_db()
                 conn.close()
             self.assertTrue(os.path.exists(path))
+
+
+class TestTrailingSync(unittest.TestCase):
+    """The last edits of a session must not wait for the next session."""
+
+    def test_drains_again_once_the_capture_throttle_window_closes(self):
+        import devcard_sync
+
+        now = [1000.0]
+        slept = []
+        drains = []
+
+        def fake_sleep(seconds):
+            slept.append(seconds)
+            now[0] += seconds
+
+        with mock.patch.object(devcard_sync, "drain", side_effect=lambda: drains.append(now[0])):
+            devcard_sync.main(sleep=fake_sleep, clock=lambda: now[0])
+
+        self.assertEqual(len(drains), 2)
+        # An edit captured just inside the window spawned nothing; the second
+        # pass has to start after that window, not before it.
+        self.assertGreater(drains[1] - drains[0], lib.SYNC_THROTTLE_SECONDS)
+
+    def test_an_edit_inside_the_window_is_sent_by_the_second_pass(self):
+        import devcard_sync
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = os.path.join(tmp, "events.db")
+            sent = []
+
+            def capture_during_the_wait(_seconds):
+                conn = lib.init_db(db)
+                try:
+                    lib.insert_event(conn, {
+                        "ts": 1750000000, "language": "Python", "lines_added": 2, "lines_removed": 0,
+                        "bytes_added": 4, "event_type": "edit", "project_key": "C:/work/repo",
+                    })
+                finally:
+                    conn.close()
+
+            with mock.patch.object(lib, "DB_PATH", db), \
+                    mock.patch.object(lib, "repo_count", return_value=1), \
+                    mock.patch.object(lib, "send_to_worker",
+                                      side_effect=lambda events, *a, **k: sent.extend(events) or True):
+                devcard_sync.main(sleep=capture_during_the_wait)
+
+            self.assertEqual(len(sent), 1)
+            conn = lib.init_db(db)
+            try:
+                self.assertEqual(lib.get_unsynced_events(conn), [])
+            finally:
+                conn.close()
 
 
 if __name__ == "__main__":

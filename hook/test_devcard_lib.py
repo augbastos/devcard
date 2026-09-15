@@ -249,7 +249,7 @@ class TestSendToWorker(unittest.TestCase):
 
 class TestIsTrackableProject(unittest.TestCase):
     def test_plain_repo_path_is_trackable(self):
-        self.assertTrue(lib.is_trackable_project(os.path.join("C:", "work","wavr")))
+        self.assertTrue(lib.is_trackable_project(os.path.join("C:", "work", "project")))
 
     def test_scratchpad_is_rejected(self):
         path = os.path.join("C:", "Temp", "claude", "abc", "scratchpad", "site")
@@ -257,7 +257,7 @@ class TestIsTrackableProject(unittest.TestCase):
 
     def test_dependency_tree_is_rejected(self):
         self.assertFalse(
-            lib.is_trackable_project(os.path.join("C:", "work","app", "node_modules", "next"))
+            lib.is_trackable_project(os.path.join("C:", "work", "app", "node_modules", "next"))
         )
 
     def test_anything_under_the_temp_root_is_rejected(self):
@@ -265,7 +265,7 @@ class TestIsTrackableProject(unittest.TestCase):
         with mock.patch.object(lib, "TEMP_ROOT", temp):
             self.assertFalse(lib.is_trackable_project(os.path.join(temp, "scpe-demo")))
             self.assertFalse(lib.is_trackable_project(temp))
-            self.assertTrue(lib.is_trackable_project(os.path.join("C:", "work","wavr")))
+            self.assertTrue(lib.is_trackable_project(os.path.join("C:", "work", "project")))
 
     def test_temp_root_only_matches_on_a_separator_boundary(self):
         temp = os.path.normcase(os.path.join("C:", "Users", "x", "Temp"))

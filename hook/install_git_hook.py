@@ -171,7 +171,7 @@ def uninstall_from(hook_path):
 
     kept = [line for line in lines if MARKER not in line]
     # A file that is now nothing but a shebang and blank lines was ours alone.
-    meaningful = [l for l in kept if l.strip() and not l.strip().startswith("#!")]
+    meaningful = [line for line in kept if line.strip() and not line.strip().startswith("#!")]
     try:
         if meaningful:
             _write_executable(hook_path, "".join(kept))

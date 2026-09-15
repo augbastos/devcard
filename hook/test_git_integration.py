@@ -264,7 +264,7 @@ class TestMergeCommits(GitRepoCase):
         # A squash merge produces a normal single-parent commit that is
         # indistinguishable from hand-written work. It IS counted, and if the
         # branch's own commits were captured on this machine those lines are
-        # counted twice. Documented in the README rather than papered over.
+        # counted twice. Documented in docs/counting.md rather than papered over.
         repo = self.make_repo()
         self.write(repo, "a.py", "one\n")
         self.commit(repo, "base")
@@ -305,6 +305,39 @@ class TestGitModeEvents(GitRepoCase):
         conn = self._run_hook(repo)
         types = dict(conn.execute("SELECT event_type, COUNT(*) FROM events GROUP BY 1"))
         self.assertEqual(types, {"diff": 2, "commit": 1})
+
+    def test_one_commit_drains_an_offline_backlog_completely(self):
+        # Nothing else sends in git mode. The hook used to drain one 50-event
+        # batch per commit, so a backlog built up offline trailed behind for as
+        # many commits as it had batches.
+        repo = self.make_repo()
+        conn = lib.init_db()
+        try:
+            lib.source_id()
+            for i in range(130):
+                lib.insert_event(conn, {
+                    "ts": 1750000000 + i, "language": "Python", "lines_added": 1,
+                    "lines_removed": 0, "bytes_added": 1, "event_type": "diff", "project_key": repo,
+                })
+        finally:
+            conn.close()
+        self.write(repo, "a.py", "one\n")
+        self.commit(repo, "first")
+
+        batches = []
+        with mock.patch.object(lib, "WORKER_INGEST_URL", "https://card.example/ingest"), \
+                mock.patch.object(lib, "repo_count", return_value=1), \
+                mock.patch.object(lib, "send_to_worker",
+                                  side_effect=lambda events, *a, **k: batches.append(len(events)) or True), \
+                mock.patch.object(githook, "capture_mode", return_value="git"), \
+                mock.patch.object(os, "getcwd", return_value=repo):
+            githook.main()
+
+        self.assertEqual(sum(batches), 132)  # the backlog, plus this commit's diff and commit rows
+        self.assertTrue(all(n <= 50 for n in batches))
+        conn = lib.init_db()
+        self.addCleanup(conn.close)
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM events WHERE synced = 0").fetchone()[0], 0)
 
     def test_claude_mode_machine_records_nothing(self):
         repo = self.make_repo()

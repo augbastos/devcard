@@ -44,6 +44,13 @@ def setUpModule():
         patcher = mock.patch.object(lib, attr, os.path.join(_MODULE_TMP, name))
         patcher.start()
         _PATCHERS.append(patcher)
+    # A configured endpoint, as install.py leaves behind. Without one the hook
+    # sends nothing at all, which is its own test.
+    # ...and a stand-in token, so no test ever holds the developer's real one.
+    for attr, value in (("WORKER_INGEST_URL", "https://card.example/ingest"), ("INGEST_TOKEN", "test-token")):
+        patcher = mock.patch.object(lib, attr, value)
+        patcher.start()
+        _PATCHERS.append(patcher)
 
 
 def tearDownModule():
@@ -494,7 +501,7 @@ class TestFailureLogThrottle(unittest.TestCase):
                 finally:
                     conn.close()
             with open(os.path.join(tmp, "errors.log"), encoding="utf-8") as f:
-                lines = [l for l in f if l.strip()]
+                lines = [line for line in f if line.strip()]
         self.assertEqual(len(lines), 1, lines)
         self.assertIn("holding 1 event(s) unsynced", lines[0])
 

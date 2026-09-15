@@ -14,32 +14,30 @@ GITHUB_CACHE_PATH = os.path.normpath(os.path.expanduser("~/.claude/devcard/githu
 SOURCE_ID_PATH = os.path.normpath(os.path.expanduser("~/.claude/devcard/source-id"))
 WORKER_URL_PATH = os.path.normpath(os.path.expanduser("~/.claude/devcard/worker-url"))
 
-# Where this installation syncs to. Resolution order: the DEVCARD_WORKER_URL
-# environment variable, then ~/.claude/devcard/worker-url, then the value below.
-#
-# setup.py writes the file. It used to rewrite this constant in place, which
-# meant a `git clone && python setup.py` left an edit in tracked source — so
-# every fork carried a diff it never meant to make, and `git pull` conflicted
-# on it. Deployment config belongs next to the token and the mode, not in the
-# module.
-DEFAULT_INGEST_URL = "https://card.devcard.workers.dev/ingest"
-
 
 def _load_worker_url():
+    """Where this installation syncs to, or "" when nothing is configured.
+
+    The DEVCARD_WORKER_URL environment variable wins, then
+    ~/.claude/devcard/worker-url, which install.py writes. There is deliberately
+    no built-in default: a default would be somebody else's Worker, and an
+    unconfigured hook would post its token and activity there.
+    """
     env = os.environ.get("DEVCARD_WORKER_URL", "").strip()
     if env:
         return env
     try:
         with open(WORKER_URL_PATH, encoding="utf-8") as f:
-            configured = f.read().strip()
-        if configured:
-            return configured
+            return f.read().strip()
     except OSError:
-        pass
-    return DEFAULT_INGEST_URL
+        return ""
 
 
 WORKER_INGEST_URL = _load_worker_url()
+
+# The capture hook spawns the background syncer at most once per this window,
+# and the syncer drains once more when the window closes (see devcard_sync.py).
+SYNC_THROTTLE_SECONDS = 20
 
 # How long a fetched GitHub repo count stays fresh. The number moves a handful
 # of times a year; refetching per sync would just burn API calls.
@@ -174,7 +172,7 @@ def language_for_path(path):
 
 # Directory names that are working directories but never a project of your own:
 # agent session scratchpads, dependency trees, virtualenvs, caches. Counting
-# these as repos is what made the card claim 115 when the real number was 40.
+# these as repos inflated the published count several-fold.
 UNTRACKED_SEGMENTS = frozenset({
     "node_modules", "scratchpad", "scratch", "npm-cache",
     "site-packages", "__pycache__", ".venv", "venv", ".worktrees", ".cache",
@@ -381,7 +379,10 @@ def init_db(db_path=None):
     and the test wrote into the owner's real events.db.
     """
     db_path = DB_PATH if db_path is None else db_path
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    # 0700 on POSIX when the directory is created here: events.db holds the
+    # project paths that never leave the machine, and they should not be
+    # readable by other local accounts either. (Ignored on Windows.)
+    os.makedirs(os.path.dirname(db_path), mode=0o700, exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS events (
@@ -620,6 +621,8 @@ def send_to_worker(events, repo_count_value, url=None, token=None, timeout=1.5,
 
     url = WORKER_INGEST_URL if url is None else url
     token = token if token is not None else INGEST_TOKEN
+    if not url:
+        return False  # unconfigured; sync_pending reports it, throttled
     source = source_id() if source is None else source
     if not source:
         log_error("send_to_worker: no installation source id — holding events for the next sync")
@@ -693,6 +696,14 @@ def sync_pending(conn, max_batches=40, timeout=10):
     Never raises: a hook must not disturb Claude Code or `git commit`.
     """
     try:
+        if not WORKER_INGEST_URL:
+            _log_throttled(
+                "worker-url-missing",
+                f"sync_pending: no Worker URL (set DEVCARD_WORKER_URL or write {WORKER_URL_PATH}); "
+                f"holding events unsynced",
+            )
+            return False
+
         source = source_id()
         if not source:
             pending = count_unstamped(conn)
