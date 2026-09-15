@@ -221,6 +221,27 @@ class TestSecretFilePermissions(unittest.TestCase):
             install.write_private(path, "new")
             self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
 
+    def test_refuses_to_write_a_token_it_could_not_protect(self):
+        # The Windows branch, forced so it runs on every platform: icacls failing
+        # used to print a warning and write the secret anyway.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "token")
+            with mock.patch.object(install, "restrict_to_owner_windows", return_value=False), \
+                    mock.patch("builtins.print"), self.assertRaises(SystemExit):
+                install.write_private(path, "s3cret", windows=True)
+            with open(path, encoding="utf-8") as f:
+                self.assertEqual(f.read(), "")
+
+    def test_preparing_keeps_an_existing_token(self):
+        # prepare_private runs before the secret is rotated, so it must not
+        # truncate the token a working installation still depends on.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "token")
+            install.write_private(path, "current")
+            install.prepare_private(path)
+            with open(path, encoding="utf-8") as f:
+                self.assertEqual(f.read(), "current")
+
     def test_overwrites_rather_than_appending_on_a_rerun(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "token")
@@ -360,13 +381,15 @@ class TestWorkerUrlConfig(unittest.TestCase):
 class FakeToolchain:
     """Answers `run` the way node, npm, git and Wrangler do, and records calls."""
 
-    def __init__(self, token_path, db_exists=False, node_version="v22.11.0", logged_in=True):
+    def __init__(self, token_path, db_exists=False, node_version="v22.11.0", logged_in=True,
+                 secret_put_fails=False):
         self.calls = []
         self.token_path = token_path
         self.db_exists = db_exists
         self.node_version = node_version
         self.secret_put_saw_local_token = None
         self.logged_in = logged_in
+        self.secret_put_fails = secret_put_fails
 
     def __call__(self, cmd, cwd=None, capture=True, input_text=None):
         self.calls.append(list(cmd))
@@ -394,7 +417,7 @@ class FakeToolchain:
             self.secret_put_saw_local_token = os.path.exists(self.token_path) and open(
                 self.token_path, encoding="utf-8").read()
             self.secret = input_text
-            return _completed()
+            return _completed("", 1, "boom") if self.secret_put_fails else _completed()
         return _completed()
 
 
@@ -469,6 +492,14 @@ class TestInstallEndToEnd(unittest.TestCase):
         self.assertEqual(second.secret_put_saw_local_token, first.secret)
         self.assertEqual(self._read(token_path), second.secret)
         self.assertNotEqual(first.secret, second.secret)
+
+    def test_a_failed_secret_rotation_keeps_the_working_token(self):
+        token_path = os.path.join(self.home, "token")
+        first = FakeToolchain(token_path)
+        self._install(first)
+        with self.assertRaises(SystemExit):
+            self._install(FakeToolchain(token_path, db_exists=True, secret_put_fails=True))
+        self.assertEqual(self._read(token_path), first.secret)
 
     def test_opens_the_login_when_wrangler_is_logged_out(self):
         fake = FakeToolchain(os.path.join(self.home, "token"), logged_in=False)

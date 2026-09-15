@@ -175,30 +175,36 @@ def detect_timezone(node):
     return zone if TIMEZONE_RE.fullmatch(zone or "") else "UTC"
 
 
-def write_private(path, content):
-    """Write a secret that only its owner can read.
+def prepare_private(path, windows=None):
+    """Make `path` exist and be readable by its owner alone, keeping any content.
 
-    POSIX: the file is created 0600 — never briefly world-readable — inside a
-    0700 directory. Windows ignores mode bits, so the file's inherited
-    permissions are replaced with full control for the current user alone,
-    using the system's own `icacls`, before the secret is written into it.
+    POSIX: created 0600 inside a 0700 directory, and tightened if it already
+    existed. Windows ignores mode bits, so inherited permissions are replaced
+    with full control for the current user, using the system's own `icacls`.
+    If that cannot be done the installer stops: a secret is never written into
+    a file it could not protect.
     """
+    windows = os.name == "nt" if windows is None else windows
     directory = os.path.dirname(path)
     os.makedirs(directory, exist_ok=True)
-    if os.name == "nt":
+    if windows:
         open(path, "a", encoding="utf-8").close()
-        restrict_to_owner_windows(path)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(content)
+        if not restrict_to_owner_windows(path):
+            die(f"could not restrict {path} to your account, so no token was written to it")
         return
     try:
         os.chmod(directory, 0o700)
     except OSError:
         pass
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(content)
+    os.close(os.open(path, os.O_WRONLY | os.O_CREAT, 0o600))
     os.chmod(path, 0o600)  # O_CREAT leaves an existing file's old mode alone
+
+
+def write_private(path, content, windows=None):
+    """Write a secret into a file only its owner can read (see prepare_private)."""
+    prepare_private(path, windows)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
 
 
 def restrict_to_owner_windows(path):
@@ -208,11 +214,11 @@ def restrict_to_owner_windows(path):
     account = f"{domain}\\{user}" if domain else user
     icacls = shutil.which("icacls")
     if not (user and icacls):
-        print(f"  warning: could not restrict {path} to your account (no icacls or USERNAME)")
+        print("  no icacls on PATH, or no USERNAME in the environment")
         return False
     result = run([icacls, path, "/inheritance:r", "/grant:r", f"{account}:F"])
     if result.returncode != 0:
-        print(f"  warning: icacls could not restrict {path}: {result.stdout.strip() or result.stderr.strip()}")
+        print(f"  icacls failed: {result.stdout.strip() or result.stderr.strip()}")
         return False
     return True
 
@@ -405,12 +411,16 @@ def main(argv=None):
     # 6. token -------------------------------------------------------------
     step(6, "Issuing the ingest token...")
     token = secrets.token_hex(24)
+    token_path = os.path.join(DEVCARD_HOME, "token")
+    # Protect the file BEFORE rotating the secret: if that is impossible the
+    # installer stops while the Worker still accepts the existing local token.
+    prepare_private(token_path)
     put = wrangler(node, "secret", "put", "INGEST_TOKEN", input_text=token)
     if put.returncode != 0:
         # The old token, if there is one, is still the one the Worker knows.
         # Overwriting the local copy now would break a working install.
         die(f"secret put failed (your existing token was left untouched):\n{put.stderr}")
-    write_private(os.path.join(DEVCARD_HOME, "token"), token)
+    write_private(token_path, token)
     print("  stored as a Worker secret and in ~/.claude/devcard/token (owner-only)")
 
     # Local config next to the token and the mode, never a source edit.
