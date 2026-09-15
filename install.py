@@ -10,7 +10,8 @@ wires ONE capture hook — Claude Code live mode, or git mode for any tool that
 commits — smoke-tests ingest, and prints your embed.
 
 Requires Python 3.11+, Node 22+ (the floor Wrangler sets), npm, git and a free
-Cloudflare account. All of them are checked before anything is created.
+Cloudflare account. All of them are checked before anything is created in
+your Cloudflare account.
 
 Safe to re-run. The database is found rather than duplicated, the config is
 re-rendered from the template (which is how template changes reach an existing

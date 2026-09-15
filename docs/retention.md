@@ -34,8 +34,9 @@ D1 free-tier storage       =  5 GB   →  centuries of headroom
 
 Storage is not the constraint, and neither are reads: the card renders from
 rollups only, so a render costs a fixed handful of rows no matter how large
-`events` becomes. The only full pass is the nightly rebuild — about 200,000 rows
-a day at that rate, against a free-tier allowance of 5,000,000 rows read per day.
+`events` becomes. The only full scans are the nightly rebuild's: four passes over
+`events`, so about 800,000 rows read a night at that rate, against a free-tier
+allowance of 5,000,000 rows read per day.
 
 The per-row estimate is deliberately pessimistic: a D1 row here is six integers,
 a short language name and a 32-character installation id, plus the unique index
@@ -83,8 +84,9 @@ problem.
 
 Revisit if any of these becomes true:
 
-- `events` passes ~5 million rows (decades at the rate above, much sooner for a
-  shared deployment);
+- `events` passes ~1 million rows — where four nightly passes approach the
+  free tier's daily read allowance; about five years at the rate above, much
+  sooner for a shared deployment;
 - the nightly rebuild starts approaching D1's daily read allowance;
 - a deployment needs the raw history gone for a privacy or legal reason.
 
@@ -98,9 +100,10 @@ bare `DELETE`.
 - Local `known_repos` — stores raw working directories and stays small; only the
   *count* of distinct git roots is ever published.
 - Local `events` — delete `~/.claude/devcard/events.db` if you want your local
-  history gone. `~/.claude/devcard/source-id` survives the deletion, so the
-  restarted row-id sequence continues in the same namespace and events already
-  synced are neither re-sent nor re-counted.
+  history gone. The hook notices the new database and retires the old
+  `source-id`, so the restarted row ids go out under a fresh namespace: nothing
+  already synced is re-counted, and nothing new is mistaken for a duplicate.
+  Events that were still unsynced go with the file.
 
 ## Read performance, locally
 

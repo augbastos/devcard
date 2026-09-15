@@ -26,10 +26,10 @@ the body.
 | Data | Local SQLite | Sent to your Worker |
 |---|---|---|
 | The fields above | ✅ | ✅ |
-| Repository **count** | ✅ | ✅ (one integer) |
+| Repository **count** | computed locally, cached in `github-repos.json` | ✅ (one integer) |
 | Project names, working directories | ✅ | ❌ no column exists |
 | File names, code content | ❌ never stored | ❌ |
-| Hostname, username, MAC address | ❌ never read | ❌ |
+| Hostname, username, MAC address | ❌ never stored | ❌ |
 
 The sync payload is built from a SQL projection that cannot select the project
 column, and the D1 schema has nowhere to put one. The test suite asserts this on
@@ -45,11 +45,13 @@ IP address a sync comes from. The Worker does not read or store it.
 ## What the card shows
 
 Anyone who can load the card can read: total lines and bytes written, the
-language mix, commit and edit counts, the repository count, the date tracking
-started, a 16-week heatmap of lines **per day** (in your configured timezone),
-your streak, and how long ago the last sync was ("updated 5min ago"). That is a
-public record of which days you coded, and of whether you are coding right now.
-It shows no projects, no files and no per-event timeline.
+language mix, commit, edit and event counts, the repository count, the date
+tracking started, a 16-week heatmap of lines **per day** (in your configured
+timezone), your streak, how long ago the last sync was ("updated 5min ago"),
+your GitHub avatar, and any badges and pinned repositories you add yourself.
+That is a public record of which days you coded, and of whether you are coding
+right now. It shows no files, no per-event timeline, and no projects other than
+the repositories you choose to pin.
 
 ## What the repository count counts
 

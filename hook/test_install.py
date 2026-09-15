@@ -157,6 +157,11 @@ class TestVersionFloors(unittest.TestCase):
         self.assertIn(f"Python {'.'.join(map(str, install.MIN_PYTHON))}+", readme)
         self.assertIn(f"Node {install.min_node()}+", readme)
 
+    def test_ruff_targets_the_python_floor(self):
+        with open(os.path.join(ROOT, "ruff.toml"), encoding="utf-8") as f:
+            ruff = f.read()
+        self.assertIn('target-version = "py{}{}"'.format(*install.MIN_PYTHON), ruff)
+
     def test_ci_runs_the_node_floor(self):
         with open(CI_WORKFLOW, encoding="utf-8") as f:
             ci = f.read()

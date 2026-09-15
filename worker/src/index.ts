@@ -79,9 +79,10 @@ const AGG_DAY_KEEP_DAYS = 16 * 7 + 14;
 // Recompute every rollup from `events`. Ingest maintains them incrementally,
 // which is fast but drifts: a deploy landing between a write and the code that
 // feeds it, a manual INSERT, a bug. Running this nightly means drift can never
-// outlive a day. It costs one pass over the table — a fraction of a percent of
-// the daily read allowance, versus the ~75k rows a single un-rolled-up card
-// render used to cost.
+// outlive a day. It scans `events` four times — the day buckets, the language
+// and event-type totals, and one combined pass for bytes, count and first_ts —
+// so it reads about four rows per stored event, once a night. docs/retention.md
+// works out when that starts to matter.
 //
 // An ingest landing between the reads and the writes below can be lost from the
 // aggregate; that is the same race the incremental path already has, and the
@@ -126,9 +127,10 @@ async function rebuildRollups(env: Env): Promise<void> {
     ...[...byDay].map(([day, lines]) =>
       env.DB.prepare("INSERT INTO agg_day (day, lines) VALUES (?, ?)").bind(day, lines)
     ),
+    // One scan for all three totals rather than a subquery (and a scan) each.
     env.DB.prepare(
-      "UPDATE agg_totals SET bytes = (SELECT COALESCE(SUM(bytes_added), 0) FROM events)," +
-        " events = (SELECT COUNT(*) FROM events), first_ts = (SELECT MIN(ts) FROM events)" +
+      "UPDATE agg_totals SET (bytes, events, first_ts) =" +
+        " (SELECT COALESCE(SUM(bytes_added), 0), COUNT(*), MIN(ts) FROM events)" +
         " WHERE id = 1"
     ),
   ];

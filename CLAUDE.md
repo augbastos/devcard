@@ -46,9 +46,9 @@ npm run dev            # needs worker/wrangler.jsonc (python install.py, or copy
 npm run deploy         # the maintainer's call, never an agent's side effect
 ```
 
-Version floors live in exactly two places: `MIN_PYTHON` in `install.py` and
-`engines.node` in `worker/package.json`. Tests fail if CI's matrix or the README
-disagree with them.
+Version floors live in two places: `MIN_PYTHON` in `install.py` and
+`engines.node` in `worker/package.json`. Tests fail if CI's matrix, the README or
+`ruff.toml`'s target version disagree with them.
 
 ## Invariants — never break these
 
@@ -63,7 +63,9 @@ disagree with them.
   with `crypto.subtle.timingSafeEqual`, never `===`.
 - **Event identity is `(source_id, client_event_id)`**, never the rowid alone.
   `source_id` is random (`secrets.token_hex`) — never derived from hostname,
-  username, MAC or a path.
+  username, MAC or a path. It namespaces the rowids of one `events.db`, so a
+  newly created database retires it; keeping it would put restarted rowids on
+  keys D1 already holds, and ingest would discard them as duplicates.
 - **The namespace belongs to the event.** A local row keeps the `source_id` it was
   stamped with forever; one batch may mix `legacy` and the current id. Re-sending
   a backlog under a new id double-counts, so do not "simplify" this into a
@@ -86,7 +88,8 @@ disagree with them.
   `Accept-Language` decides the body without being in the URL, and `Vary` does
   not separate entries on the `caches.open("default")` path.
 - **Hooks never block or fail the tool or the commit.** Errors go to
-  `~/.claude/devcard/errors.log`, throttled.
+  `~/.claude/devcard/errors.log`; missing-config failures are throttled to one
+  line an hour.
 
 ## Rules for tests
 
@@ -127,8 +130,8 @@ disagree with them.
 
 - `main` is protected: pull request, squash merge, required checks (`ci-ok`,
   `secrets`, `dependencies`, `verify`). No direct pushes, no force pushes.
-- Every pull request carries an AI-use disclosure (`scpe` check): tick the box in
-  the template or add an `Assisted-by:` trailer.
+- Every pull request carries an AI-use disclosure, or `verify` fails: tick a box
+  in the template or add an `Assisted-by:` trailer.
 - Actions are pinned by commit SHA with the version in a comment; keep it that way.
 - Never commit `worker/wrangler.jsonc`, `.dev.vars*`, `.env*`, `*.db`, `.wrangler/`
   or `docs/superpowers/`.

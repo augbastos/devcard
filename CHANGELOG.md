@@ -27,8 +27,8 @@ What "public API" means for devcard, since it is not a library:
   [upgrading](docs/manual-setup.md#upgrading-an-existing-deployment).
 - **Supported versions: Python 3.11+ and Node 22+.** Node 18 and 20 and Python
   3.9 are past end of life, and Wrangler itself requires Node 22. Each floor is
-  defined once (`install.py`, `worker/package.json`), and a test keeps CI and the
-  README in step with it.
+  defined once (`install.py`, `worker/package.json`), and tests keep CI, the
+  README and Ruff's target version in step with it.
 - **The hook has no default Worker URL.** It used to fall back to the
   maintainer's own Worker, so a hook installed without the installer sent its
   token and activity there. Unconfigured, it now captures locally and sends
@@ -92,14 +92,14 @@ What "public API" means for devcard, since it is not a library:
 
 - **Global event identity.** Every installation generates a random, opaque
   `source_id`; D1 dedupes on `(source_id, client_event_id)` instead of the local
-  rowid alone. Two machines can now share one backend, and deleting the local
-  `events.db` no longer collides with already-synced history.
+  rowid alone. Two machines can now share one backend.
 - **Per-event namespaces.** The local `events` table stores a `source_id` per
   row, stamped at insert and never changed, and the wire format lets an event
   override the batch's. A batch can therefore mix a backlog queued before the
   installation had an id with events captured after it.
-- **A local failure log throttle** (`_log_throttled`), so a persistent failure
-  that repeats every ~20 seconds writes one line an hour instead of thousands.
+- **A local failure log throttle** (`_log_throttled`), so a missing Worker URL
+  or installation id, which repeats on every sync, writes one line an hour
+  instead of thousands.
 - **`worker/migrations/0001_event_source_id.sql`** to upgrade an existing D1
   database.
   Nothing is deleted or renumbered; pre-existing rows and hooks that predate the
@@ -127,13 +127,22 @@ What "public API" means for devcard, since it is not a library:
 
 ### Fixed
 
+- **Deleting `events.db` silently dropped every new event.** The installation
+  id survived the deletion while the row ids restarted at 1, so each new event
+  arrived on a key D1 already held: `INSERT OR IGNORE` discarded it, the hook
+  saw a 2xx and marked it synced, and the card stopped counting until the new
+  ids passed the old maximum. A new database now retires the old id.
+- **The AI-use disclosure check never blocked a merge.** The SCPE Action exits 0
+  at level 1 so its results reach the commenting job, which left the required
+  `verify` check green without a disclosure. `verify` now fails in that case
+  (Dependabot excepted); `scpe-seal` still posts the explanation.
 - **The last edits of a session could wait for the next session.** The capture
   hook starts the syncer at most once per 20 seconds, so an edit made inside that
   window started nothing and stayed local until the next tool call — possibly
   the next day. The syncer now drains once more when the window closes.
 - **git mode drained one 50-event batch per commit.** Nothing else sends in git
   mode, so a backlog built up offline trailed behind for as many commits as it
-  had batches. A commit now drains it completely, in the background.
+  had batches. A commit now drains up to 2,000 events, in the background.
 - **The installer never opened the Cloudflare login.** `wrangler whoami` exits 0
   when logged out, so checking its exit code always passed; it now uses
   `whoami --json`, which fails.
@@ -194,12 +203,14 @@ What "public API" means for devcard, since it is not a library:
   `main`, which the branch ruleset rightly rejects. It updates one open pull
   request rather than stacking new ones, and does nothing when the block has not
   changed.
+- The nightly rebuild scans `events` four times instead of six: bytes, count
+  and first timestamp come from one pass.
 - `docs/retention.md` no longer publishes one installation's exact activity
   figures; it gives rounded capacity bounds and a way to measure your own.
 - `CLAUDE.md` holds only durable guidance for coding agents; dated state moved
   out.
 
-- **The README is 216 lines instead of 524.** The reference material it had
+- **The README was cut from 524 lines to under 150.** The reference material it had
   accumulated — counting rules, the privacy and security model, the GitHub
   hover measurements, the manual setup steps — moved to `docs/` under their own
   headings, linked from a short index. Nothing was dropped.

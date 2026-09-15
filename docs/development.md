@@ -45,7 +45,7 @@ README stops matching them.
 | `security` | `secrets` | Gitleaks over the whole history. |
 | `security` | `dependencies` | Dependency review: a pull request adding a known-vulnerable package fails. |
 | `security` | `codeql` | CodeQL for TypeScript, Python and the workflow files. |
-| `scpe` / `scpe-seal` | `verify` | Checks that a pull request discloses AI use. Says nothing about whether the code works. |
+| `scpe` / `scpe-seal` | `verify` | Fails a pull request that does not disclose AI use (Dependabot excepted); `scpe-seal` comments with the reason. Says nothing about whether the code works. |
 
 The required checks on `main` are `ci-ok`, `secrets`, `dependencies` and `verify`.
 
@@ -57,8 +57,10 @@ How the workflows are kept safe:
 - `persist-credentials: false` on every checkout;
 - nothing from a pull request is interpolated into a shell script — values reach
   `run:` through environment variables;
-- no job holding a write token ever checks out or runs contributor code
-  (`scpe-seal` only reads an artifact, and validates it before use).
+- no job holding a write token runs contributor code: `codeql` checks it out
+  only to analyse it, without building (`build-mode: none`), and `scpe-seal`
+  never checks it out — it validates the pull request number from the artifact
+  and posts SCPE's rendered comment as-is.
 
 ## The weekly README refresh
 
@@ -75,8 +77,11 @@ never receive its required checks. To set it up once:
 1. Create a GitHub App (Settings → Developer settings → GitHub Apps) with no
    webhook and two repository permissions: **Contents: read and write** and
    **Pull requests: read and write**. Install it on this repository only.
-2. Store its Client ID as the Actions **variable** `DEVCARD_BOT_CLIENT_ID`, and
-   a generated private key as the Actions **secret** `DEVCARD_BOT_PRIVATE_KEY`.
+2. Create the environment `readme-bot` (Settings → Environments) with
+   deployment branches limited to `main`. In it, store the App's Client ID as
+   the **variable** `DEVCARD_BOT_CLIENT_ID` and a generated private key as the
+   **secret** `DEVCARD_BOT_PRIVATE_KEY`. A workflow on any other branch cannot
+   read them.
 
 Until both exist, the workflow writes whether the README is stale to its run
 summary and changes nothing. The token it mints is limited to those two

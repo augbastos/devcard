@@ -70,9 +70,13 @@ of `secrets.token_hex`, cached in `~/.claude/devcard/source-id`), and identity i
 the pair. That means:
 
 - **two machines can share one backend** — machine B's event 1 is no longer
-  mistaken for machine A's and silently dropped;
-- **deleting `~/.claude/devcard/events.db` is safe** — the restarted rowid
-  sequence continues in the same namespace instead of colliding with history;
+  mistaken for machine A's and silently dropped (set up the second machine by
+  [copying three files](manual-setup.md#adding-a-second-machine), not by
+  re-running the installer, which rotates the token);
+- **deleting `~/.claude/devcard/events.db` is safe** — a new database retires
+  the old `source_id`, so its restarted rowids go out under a fresh namespace
+  instead of landing on keys the Worker already holds and being discarded as
+  duplicates;
 - retries stay idempotent, in `events` and in the rollups the card renders from.
 
 The `source_id` is random and carries no hostname, username, MAC address or

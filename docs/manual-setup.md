@@ -145,6 +145,22 @@ devcard was all it contained.
 
 The hook line runs in the background, so a commit never waits on the network.
 
+## Adding a second machine
+
+Two machines can share one Worker. Do not run `install.py` on the second one: it
+rotates the ingest token, and the first machine would then be refused on every
+sync. Instead, on the second machine:
+
+1. clone the repository;
+2. copy `token` and `worker-url` from the first machine's `~/.claude/devcard/`,
+   keeping the token file [owner-only](#3-create-your-ingest-token);
+3. write that machine's capture mode to `~/.claude/devcard/mode`, and install
+   its hook as in [step 5](#5-register-the-hook-in-claude-code) or
+   [git mode](#installing-the-git-hook).
+
+Each machine generates its own installation id on its first sync, so their
+events never collide.
+
 ## Upgrading an existing deployment
 
 Deployments set up before the template existed kept their values in a tracked

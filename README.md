@@ -26,7 +26,7 @@ from there.
 - **Live, not batch.** An edit reaches your Worker within about half a minute,
   and the rendered card is cached for five minutes — not "synced last night".
 - **Content-private by architecture.** Code, file names, paths and project names
-  never leave your machine; the public database has no column that could hold
+  never leave your machine; nothing the hooks send has a field that could hold
   one. What does leave is activity metadata — when, which language, how many
   lines and bytes — plus a repository count and a random installation id.
   [Exactly what, and what the card shows →](docs/privacy-and-security.md)
@@ -37,7 +37,7 @@ from there.
 
 Python 3.11+, Node 22+, npm, git, and a free
 [Cloudflare account](https://dash.cloudflare.com/sign-up). The installer checks
-all of them before it creates anything.
+all of them before it creates anything in your Cloudflare account.
 
 ```bash
 git clone https://github.com/augbastos/devcard && cd devcard && python install.py
@@ -45,7 +45,9 @@ git clone https://github.com/augbastos/devcard && cd devcard && python install.p
 
 It creates your D1 database, deploys your Worker, installs the capture hook, and
 prints your embed. Your deployment's settings go to a gitignored config, never
-into a tracked file, and re-running it is safe. Two questions — three in `git`
+into a tracked file, and re-running it is safe
+([a second machine](docs/manual-setup.md#adding-a-second-machine) copies the
+token and URL instead). Two questions — three in `git`
 mode, which also asks where your repos live.
 [By hand instead →](docs/manual-setup.md)
 
@@ -116,7 +118,7 @@ flowchart LR
 Events land locally first, so capture works offline and never blocks your
 session. Each event carries a random installation id and its local row id, so a
 retried batch, a second machine or a deleted local database never counts
-anything twice. Rollup tables mean one render reads about a hundred rows rather
+anything twice — or mistakes new work for a duplicate. Rollup tables mean one render reads about a hundred rows rather
 than one per event ever recorded, which is what keeps a card inside the free
 tier.
 
@@ -125,8 +127,9 @@ tier.
 - **Tests run against the real thing.** The Worker suite runs inside workerd
   against a local D1; the git suite builds throwaway repositories and runs real
   git — merges, worktrees, `core.hooksPath`, husky, paths with spaces.
-- **CI on Linux and Windows**, at the oldest and newest supported Python and
-  Node, with no Cloudflare account or secret — a fork's pull request runs all of it.
+- **CI with no Cloudflare account or secret**: the Python suites on Linux and
+  Windows at 3.11 and 3.14, the Worker on Node 22 and 24 — a fork's pull request
+  runs all of it.
 - **Supply chain**: a locked npm tree installed without install scripts, every
   Action pinned to a commit SHA, Dependabot, dependency review, Gitleaks over the
   full history, and CodeQL for TypeScript, Python and the workflows themselves.
