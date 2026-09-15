@@ -153,6 +153,27 @@ def source_id(path=None, create=True):
         return ""
 
 
+def _retire_source_id():
+    """Drop the installation id because its database is being created anew.
+
+    A source id namespaces the rowids of ONE events.db. When that file is
+    deleted, AUTOINCREMENT starts again at 1, and keeping the id would put every
+    new event on a key the Worker already holds — `INSERT OR IGNORE` discards
+    it, the hook sees a 2xx and marks it synced, and the card silently stops
+    counting until the new rowids pass the old maximum.
+
+    Nothing is lost by dropping it: the rows it named were in the deleted file.
+    The next sync generates a fresh id through `source_id`, and until then new
+    rows wait unstamped, exactly as on a first install.
+    """
+    try:
+        os.remove(SOURCE_ID_PATH)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        log_error(f"could not retire the source id for a new events.db: {exc}")
+
+
 EXT_LANGUAGE = {
     ".py": "Python", ".js": "JavaScript", ".jsx": "JavaScript", ".mjs": "JavaScript", ".cjs": "JavaScript",
     ".ts": "TypeScript", ".tsx": "TypeScript", ".html": "HTML", ".htm": "HTML",
@@ -378,11 +399,14 @@ def init_db(db_path=None):
     defined, so patching `devcard_lib.DB_PATH` in a test silently did nothing
     and the test wrote into the owner's real events.db.
     """
+    installation_db = db_path is None
     db_path = DB_PATH if db_path is None else db_path
     # 0700 on POSIX when the directory is created here: events.db holds the
     # project paths that never leave the machine, and they should not be
     # readable by other local accounts either. (Ignored on Windows.)
     os.makedirs(os.path.dirname(db_path), mode=0o700, exist_ok=True)
+    if installation_db and not os.path.exists(db_path):
+        _retire_source_id()
     conn = sqlite3.connect(db_path)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS events (

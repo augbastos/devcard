@@ -105,18 +105,55 @@ class TestSourceId(unittest.TestCase):
                 lib.source_id(os.path.join(b, "source-id")),
             )
 
-    def test_survives_recreating_the_local_database(self):
-        # Deleting events.db restarts the rowid sequence. The source id lives in
-        # a different file precisely so that the new sequence lands in the same
-        # namespace and old rows are not re-counted.
-        with tempfile.TemporaryDirectory() as tmp:
-            source_path = os.path.join(tmp, "source-id")
-            db_path = os.path.join(tmp, "events.db")
-            before = lib.source_id(source_path)
-            lib.init_db(db_path).close()
-            os.remove(db_path)
-            lib.init_db(db_path).close()
-            self.assertEqual(lib.source_id(source_path), before)
+    def test_a_recreated_local_database_gets_a_new_namespace(self):
+        # Deleting events.db restarts the rowid sequence at 1. Keeping the old
+        # source id would put the new rows on keys the Worker already holds.
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(lib, "DB_PATH", os.path.join(tmp, "events.db")), \
+                mock.patch.object(lib, "SOURCE_ID_PATH", os.path.join(tmp, "source-id")):
+            lib.init_db().close()
+            before = lib.source_id()
+            lib.init_db().close()
+            self.assertEqual(lib.source_id(), before, "reopening an existing database keeps its namespace")
+            os.remove(lib.DB_PATH)
+            lib.init_db().close()
+            self.assertNotEqual(lib.source_id(), before)
+
+    def test_events_after_deleting_the_local_database_still_reach_the_card(self):
+        # End to end against a stand-in for D1's (source_id, client_event_id)
+        # unique key. The reproduction: three events synced, events.db deleted,
+        # two new events captured — and the Worker used to discard both as
+        # duplicates while the hook marked them synced.
+        stored = set()
+
+        def fake_ingest(req, timeout=None):
+            body = json.loads(req.data)
+            for event in body["events"]:
+                stored.add((event.get("source_id") or body["source_id"], event["id"]))
+            return _mock_response()
+
+        def capture(n):
+            conn = lib.init_db()
+            try:
+                for i in range(n):
+                    lib.insert_event(conn, {
+                        "ts": 1750000000 + i, "language": "Python", "lines_added": 1, "lines_removed": 0,
+                        "bytes_added": 1, "event_type": "edit", "project_key": "C:/work/repo",
+                    })
+                self.assertTrue(lib.sync_pending(conn))
+            finally:
+                conn.close()
+
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(lib, "DB_PATH", os.path.join(tmp, "events.db")), \
+                mock.patch.object(lib, "SOURCE_ID_PATH", os.path.join(tmp, "source-id")), \
+                mock.patch.object(lib, "repo_count", return_value=1), \
+                mock.patch("urllib.request.urlopen", side_effect=fake_ingest):
+            capture(3)
+            os.remove(lib.DB_PATH)
+            capture(2)
+
+        self.assertEqual(len(stored), 5)
 
     def test_carries_no_identifying_information(self):
         # It must be random, never derived from anything about the machine.
@@ -428,7 +465,8 @@ class TestLocalSchema(unittest.TestCase):
         # into the owner's real events.db.
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "events.db")
-            with mock.patch.object(lib, "DB_PATH", path):
+            with mock.patch.object(lib, "DB_PATH", path), \
+                    mock.patch.object(lib, "SOURCE_ID_PATH", os.path.join(tmp, "source-id")):
                 conn = lib.init_db()
                 conn.close()
             self.assertTrue(os.path.exists(path))
@@ -474,6 +512,7 @@ class TestTrailingSync(unittest.TestCase):
                     conn.close()
 
             with mock.patch.object(lib, "DB_PATH", db), \
+                    mock.patch.object(lib, "SOURCE_ID_PATH", os.path.join(tmp, "source-id")), \
                     mock.patch.object(lib, "repo_count", return_value=1), \
                     mock.patch.object(lib, "send_to_worker",
                                       side_effect=lambda events, *a, **k: sent.extend(events) or True):
