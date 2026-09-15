@@ -38,7 +38,9 @@ concurrency:
 jobs:
   seal:                         # TRUSTED — write token; never runs untrusted code
     name: seal
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # A failed verify is usually a missing disclosure, which is exactly when the
+    # explanation is needed. If verify failed before uploading, the download fails.
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == 'failure' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # A job-level permissions block REPLACES the workflow default (it does not merge),

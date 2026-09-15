@@ -42,8 +42,9 @@ jobs:
     name: refresh
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      APP_CLIENT_ID: ${{ vars.DEVCARD_BOT_CLIENT_ID }}
+    # The App's private key lives in this environment, which only accepts runs
+    # from main — a workflow on any other branch cannot read it.
+    environment: readme-bot
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -53,7 +54,7 @@ jobs:
         run: python3 scripts/refresh_readme.py
 
       - name: Report when no bot is configured
-        if: env.APP_CLIENT_ID == ''
+        if: vars.DEVCARD_BOT_CLIENT_ID == ''
         run: |
           if git diff --quiet -- README.md; then
             echo "The README's card block is current." >> "$GITHUB_STEP_SUMMARY"
@@ -63,16 +64,16 @@ jobs:
 
       - name: Mint a short-lived App token
         id: app-token
-        if: env.APP_CLIENT_ID != ''
+        if: vars.DEVCARD_BOT_CLIENT_ID != ''
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          client-id: ${{ env.APP_CLIENT_ID }}
+          client-id: ${{ vars.DEVCARD_BOT_CLIENT_ID }}
           private-key: ${{ secrets.DEVCARD_BOT_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
 
       - name: Open or update the refresh pull request
-        if: env.APP_CLIENT_ID != ''
+        if: vars.DEVCARD_BOT_CLIENT_ID != ''
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
           token: ${{ steps.app-token.outputs.token }}
