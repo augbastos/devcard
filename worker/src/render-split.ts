@@ -216,19 +216,24 @@ export function embedHtml(
     .join(", ");
   const alt = `devcard — ${user}'s live coding stats. Languages: ${breakdown}`;
 
+  // Each piece's URL carries the width its `width` attribute declares (`w`, in
+  // millionths of the card), so the Worker draws it at that width and every
+  // piece keeps the same rendered height even after the live proportions move
+  // away from this block — see `pieceWidth` in variants.ts.
+  const w = (pct: number) => String(Math.round(pct * 1e4));
   const pieces = [
     `<img src="${q({ part: "body" })}" width="100%" align="top" alt="${escapeXml(alt)}">`,
-    `<img src="${q({ part: "cap", side: "l" })}" width="${pctText(strip.capLeftPct)}%" align="top" alt="">`,
+    `<img src="${q({ part: "cap", side: "l", w: w(strip.capLeftPct) })}" width="${pctText(strip.capLeftPct)}%" align="top" alt="">`,
   ];
   strip.slots.forEach((slot, i) => {
     const title = escapeXml(slotLabel(slot, otherWord));
     pieces.push(
-      `<img src="${q({ part: "seg", i: String(i) })}" width="${pctText(slot.pct)}%" ` +
+      `<img src="${q({ part: "seg", i: String(i), w: w(slot.pct) })}" width="${pctText(slot.pct)}%" ` +
         `align="top" title="${title}" alt="">`
     );
   });
   pieces.push(
-    `<img src="${q({ part: "cap", side: "r" })}" width="${pctText(strip.capRightPct)}%" align="top" alt="">`
+    `<img src="${q({ part: "cap", side: "r", w: w(strip.capRightPct) })}" width="${pctText(strip.capRightPct)}%" align="top" alt="">`
   );
   return `<p>${pieces.join("")}</p>`;
 }
