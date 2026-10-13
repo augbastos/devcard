@@ -215,6 +215,46 @@ class HookIntegrationTest(TempDirTest):
                 self.assertEqual(lib.auto_publish(), "skipped")
         self.assertIn("3 repos", git(remote, "show", f"{publish.BRANCH}:card.svg"))
 
+    def test_a_skipped_publish_leaves_one_waiter(self):
+        remote = self.bare_remote()
+        with Home(self.tmp, "a") as home, mock.patch.object(publish, "_spawn_waiter") as spawn:
+            home.add_events([edit(int(time.time()) - 60)])
+            config.save(cfg_for(remote))
+            with mock.patch.object(lib, "repo_count", lambda _conn: 3):
+                self.assertEqual(publish.auto(), "published")
+                spawn.assert_not_called()
+                self.assertEqual(publish.auto(), "skipped")
+        spawn.assert_called_once_with()
+
+    def test_the_waiter_publishes_when_the_window_closes(self):
+        """The last edits of a session must not wait for the next session."""
+        remote = self.bare_remote()
+        clock = [float(NOW)]
+        slept = []
+
+        def sleep(seconds):
+            slept.append(seconds)
+            clock[0] += seconds
+
+        with Home(self.tmp, "a") as home, mock.patch.object(publish.time, "time", lambda: clock[0]):
+            home.add_events([edit(NOW - 60, "Python", 5)])
+            config.save(cfg_for(remote))
+            with mock.patch.object(lib, "repo_count", lambda _conn: 3):
+                self.assertEqual(publish.auto(), "published")
+                clock[0] += 600
+                home.add_events([edit(int(clock[0]), "Go", 7)])
+                self.assertEqual(publish.auto(), "skipped")
+                self.assertEqual(publish.when_due(sleep=sleep, clock=lambda: clock[0]), "published")
+            self.assertFalse(os.path.exists(config.pending_path()))
+        self.assertEqual(slept, [301.0])
+        self.assertIn(">12<", git(remote, "show", f"{publish.BRANCH}:card.svg"))
+
+    def test_only_one_waiter_per_machine(self):
+        with Home(self.tmp, "a"):
+            os.makedirs(os.path.dirname(config.pending_path()), exist_ok=True)
+            open(config.pending_path(), "w").close()
+            self.assertEqual(publish.when_due(sleep=self.fail), "waiting")
+
     def test_auto_publish_logs_instead_of_raising(self):
         with Home(self.tmp, "a") as home:
             config.save(cfg_for(os.path.join(self.tmp, "missing.git")))

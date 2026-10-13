@@ -38,6 +38,17 @@ AVATAR_TTL = 86400
 AVATAR_FAILURE_TTL = 3600
 AVATAR_MAX_BYTES = 256 * 1024
 
+# What git exports to a hook so that commands find *that* repository
+# (`git rev-parse --local-env-vars`, plus the -c passthrough). Inherited by a
+# publish started from the post-commit hook, they would point every command
+# below at the user's project instead of the private bare repository.
+REPO_ENV_VARS = (
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT",
+    "GIT_OBJECT_DIRECTORY", "GIT_DIR", "GIT_WORK_TREE", "GIT_IMPLICIT_WORK_TREE", "GIT_GRAFT_FILE",
+    "GIT_INDEX_FILE", "GIT_NO_REPLACE_OBJECTS", "GIT_REPLACE_REF_BASE", "GIT_PREFIX",
+    "GIT_SHALLOW_FILE", "GIT_COMMON_DIR", "GIT_NAMESPACE",
+)
+
 AUTHOR_ENV = {
     "GIT_AUTHOR_NAME": "devcard",
     "GIT_AUTHOR_EMAIL": "devcard@devcard.invalid",
@@ -93,10 +104,14 @@ class _Repo:
         self.cred = _credential_args(url)
 
     def git(self, *args, stdin=None, env=None, check=True):
+        base = {k: v for k, v in os.environ.items()
+                if k not in REPO_ENV_VARS and not k.startswith("GIT_CONFIG_")}
+        # Publishing runs in the background: a credential prompt would hang there.
+        base["GIT_TERMINAL_PROMPT"] = "0"
         try:
             proc = subprocess.run(
                 ["git", *self.cred, "-C", self.path, *args],
-                input=stdin, capture_output=True, env={**os.environ, **(env or {})},
+                input=stdin, capture_output=True, env={**base, **(env or {})},
                 timeout=120,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
@@ -365,15 +380,83 @@ def publish(cfg, now=None, force=False, repo_count_fn=None, avatar_fn=None):
         raise PublishError(f"push rejected {PUSH_ATTEMPTS} times ({detail})")
 
 
-def auto():
-    """The hooks' entry point: publish if configured and due. Never raises."""
+def auto(spawn=True):
+    """The hooks' entry point: publish if configured and due. Never raises.
+
+    A publish skipped by the debounce leaves a waiter behind (see when_due), so
+    the last edits of a session are published when the window closes instead
+    of whenever the next session starts.
+    """
     try:
         cfg = config.load()
         if not cfg or not cfg.get("repo"):
             return None
-        return publish(cfg)
+        status = publish(cfg)
+        if status == "skipped" and spawn:
+            _spawn_waiter()
+        return status
     except PublishError as exc:
         lib._log_throttled("publish-failure", f"devcard publish: {exc}")
     except Exception as exc:
         lib.log_error(f"devcard publish failed: {exc}")
     return None
+
+
+def _waiter_fresh(marker):
+    try:
+        return time.time() - os.stat(marker).st_mtime < MIN_INTERVAL + 300
+    except OSError:
+        return False
+
+
+def _spawn_waiter():
+    """Start `devcard publish --when-due` detached, unless one is already waiting."""
+    if _waiter_fresh(config.pending_path()):
+        return
+    import sys
+
+    flags = 0
+    if os.name == "nt":
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+    # The parent of this package: the repository root in a checkout (so -m finds
+    # devcard/), site-packages' parent under pipx, where site finds it anyway.
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    subprocess.Popen(
+        [sys.executable, "-m", "devcard", "publish", "--when-due"],
+        cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        close_fds=True, creationflags=flags,
+    )
+
+
+def when_due(sleep=time.sleep, clock=time.time, attempts=4):
+    """Sleep until the debounce window closes, then publish. One waiter per machine.
+
+    The trailing edge of the debounce: hooks fire on activity, so without this
+    the edits made in a session's last 15 minutes would wait for the next
+    session. A publish that is skipped again (another check got in first)
+    waits for that one's window, a bounded number of times.
+    """
+    marker = config.pending_path()
+    os.makedirs(os.path.dirname(marker), exist_ok=True)
+    try:
+        os.close(os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+    except FileExistsError:
+        if _waiter_fresh(marker):
+            return "waiting"
+        os.utime(marker)  # a waiter that died; take over
+    try:
+        status = "skipped"
+        for _ in range(attempts):
+            last = _read_json(config.state_path()).get("last_check", 0)
+            wait = last + MIN_INTERVAL - clock()
+            if wait > 0:
+                sleep(wait + 1)
+            status = auto(spawn=False)
+            if status != "skipped":
+                return status
+        return status
+    finally:
+        try:
+            os.remove(marker)
+        except OSError:
+            pass

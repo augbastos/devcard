@@ -21,6 +21,10 @@ hook ─> ~/.claude/devcard/events.db                      README.md
   detached background process after an edit (claude mode) or a commit (git
   mode). On a machine set up with `devcard init`, that process runs `publish`,
   which does nothing unless 15 minutes have passed since its last check.
+- **Once more when the window closes.** A publish skipped by that rule leaves
+  one background process waiting (`devcard publish --when-due`, at most one per
+  machine) that publishes when the 15 minutes are up — so the last edits of a
+  session go out within 15 minutes rather than at the start of the next one.
 - **By hand**, with `devcard publish` (same 15-minute rule) or
   `devcard publish --force`.
 - **Not when nothing changed.** If the rendered files and this machine's numbers
@@ -53,6 +57,7 @@ On each machine, in `~/.claude/devcard/` (next to the hook's database):
 | `events.db` | The hook's local database. Holds working directories; never published. |
 | `publish/<owner>__<name>/` | A private bare git repository publishing goes through. Safe to delete. |
 | `publish-state.json` | When this machine last checked and last pushed. Delete it to lift the debounce once. |
+| `publish.lock`, `publish-pending` | A publish in progress, and the one waiting for the window to close. Removed when they finish; ignored after 10 and 20 minutes. |
 | `avatar.json` | Your GitHub avatar as a data URI, cached for a day. |
 
 On the branch `devcard-data` of the repository you chose:

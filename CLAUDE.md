@@ -150,6 +150,9 @@ Version floors live in two places: `MIN_PYTHON` in `install.py` and
 - Opening the hook database when it does not exist yet retires `source_id`
   (`init_db`). Read the machine id only after the database is open, or the first
   publish names a file that the next publish abandons.
+- git exports `GIT_DIR`, `GIT_INDEX_FILE` and friends to hooks. A publish started
+  from the post-commit hook inherits them, so `publish._Repo` strips them
+  (`REPO_ENV_VARS`) — otherwise its commands land in the user's project.
 - The hooks run as `python -S <dir>/<hook>.py`: no site-packages, only the
   script's directory on `sys.path`. That is why pyproject installs the hook
   modules next to the `devcard` package, and why `lib.auto_publish` falls back

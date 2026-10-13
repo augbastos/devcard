@@ -47,6 +47,8 @@ class Home:
             (lib, "WORKER_INGEST_URL", ""),
             (lib, "github_repo_count", lambda now=None: None),
             (publish, "fetch_avatar", lambda user, now=None: None),
+            # A real waiter is a detached process that would outlive the patches.
+            (publish, "_spawn_waiter", lambda: None),
         ):
             patcher = mock.patch.object(module, attr, value)
             patcher.start()

@@ -46,6 +46,10 @@ def lock_path():
     return os.path.join(HOME, "publish.lock")
 
 
+def pending_path():
+    return os.path.join(HOME, "publish-pending")
+
+
 def load():
     """The saved config merged over the defaults, or None when there is none."""
     try:

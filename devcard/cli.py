@@ -208,6 +208,11 @@ def cmd_render(args):
 
 
 def cmd_publish(args):
+    if args.when_due:
+        from .publish import when_due
+
+        when_due()
+        return 0
     cfg = _effective_config(args)
     if cfg.get("repo") and not config.REPO_RE.match(cfg["repo"]):
         print(f"devcard publish: not owner/name: {cfg['repo']!r}")
@@ -280,6 +285,7 @@ def build_parser():
     p.add_argument("--repo", help="owner/name (default: the one `devcard init` saved)")
     p.add_argument("--remote", help="git URL to push to instead of https://github.com/<repo>.git")
     p.add_argument("--force", action="store_true", help=f"publish even if the last one was under {MIN_INTERVAL // 60} min ago")
+    p.add_argument("--when-due", action="store_true", help=argparse.SUPPRESS)  # the hooks' trailing publish
     card_options(p)
     p.set_defaults(func=cmd_publish)
 

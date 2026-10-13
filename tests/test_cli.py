@@ -95,6 +95,11 @@ class CommandsTest(TempDirTest):
             self.assertEqual(cli.main(["status"]), 1)
         self.assertIn("devcard init", buf.getvalue())
 
+    def test_the_waiter_exits_quietly_without_a_config(self):
+        with Home(self.tmp, "a"):
+            self.assertEqual(cli.main(["publish", "--when-due"]), 0)
+            self.assertFalse(os.path.exists(config.pending_path()))
+
     def test_publish_command_reports_failure_with_exit_1(self):
         with Home(self.tmp, "a"), contextlib.redirect_stdout(io.StringIO()) as buf:
             self.assertEqual(cli.main(["publish", "--force"]), 1)
@@ -136,17 +141,24 @@ class HookPublishesTest(TempDirTest):
             f.write("print(1)\nprint(2)\nprint(3)\n")
         # No GitHub token reaches the hook: `gh` must fail offline, not ask the API.
         inherited = {k: v for k, v in os.environ.items() if not k.startswith(("GH_", "GITHUB_"))}
+        # What git exports to a post-commit hook. Publishing must not follow it
+        # into the project: it works in its own bare repository.
+        git_dir = os.path.join(project, ".git")
         env = {**inherited, "HOME": home, "USERPROFILE": home, "DEVCARD_WORKER_URL": "",
+               "GIT_DIR": git_dir, "GIT_INDEX_FILE": os.path.join(git_dir, "index"),
                "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid",
                "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid",
                "XDG_CONFIG_HOME": os.path.join(home, ".config")}
         subprocess.run(["git", "-C", project, "add", "."], check=True, env=env)
         subprocess.run(["git", "-C", project, "commit", "-q", "-m", "x"], check=True, env=env)
+        project_refs = git(project, "for-each-ref")
         hook = os.path.join(ROOT, "hook", "devcard_git_hook.py")
         subprocess.run([sys.executable, "-S", hook], cwd=project, env=env, check=True, timeout=120)
 
         card = git(remote, "show", f"{publish.BRANCH}:card.svg")
         self.assertIn(">3<", card)
+        self.assertEqual(git(project, "for-each-ref"), project_refs)
+        self.assertEqual(git(project, "remote"), "")
         machines = git(remote, "ls-tree", "--name-only", f"{publish.BRANCH}:machines")
         self.assertRegex(machines, re.compile(r"^[0-9a-f]{32}\.json$"))
         errors = os.path.join(devcard_home, "errors.log")
