@@ -13,6 +13,9 @@ TOKEN_PATH = os.path.normpath(os.path.expanduser("~/.claude/devcard/token"))
 GITHUB_CACHE_PATH = os.path.normpath(os.path.expanduser("~/.claude/devcard/github-repos.json"))
 SOURCE_ID_PATH = os.path.normpath(os.path.expanduser("~/.claude/devcard/source-id"))
 WORKER_URL_PATH = os.path.normpath(os.path.expanduser("~/.claude/devcard/worker-url"))
+# Written by `devcard init`. Its presence means this machine publishes the card
+# itself (the `devcard` package) instead of syncing to a Worker.
+CONFIG_PATH = os.path.normpath(os.path.expanduser("~/.claude/devcard/config.json"))
 
 
 def _load_worker_url():
@@ -705,6 +708,40 @@ def _log_throttled(key, message, ttl=LOG_THROTTLE_TTL, now=None):
     return True
 
 
+def publish_configured():
+    """True when `devcard init` set this machine up to publish without a Worker."""
+    try:
+        with open(CONFIG_PATH, encoding="utf-8") as f:
+            return bool(json.load(f).get("repo"))
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def auto_publish():
+    """Publish the card if this machine is set up for it and it is due. Never raises.
+
+    The `devcard` package does the work (debounced to once per 15 minutes, git
+    in a background process the hooks already are). Installed with pipx it sits
+    next to this module in site-packages; in a clone it is this directory's
+    sibling, which is why the parent directory is the fallback. The import is
+    here, not at the top, because this module is on the per-tool-call hot path.
+    """
+    if not publish_configured():
+        return None
+    try:
+        import sys
+
+        try:
+            from devcard import publish
+        except ImportError:
+            sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            from devcard import publish
+        return publish.auto()
+    except Exception as exc:
+        log_error(f"auto_publish failed: {exc}")
+        return None
+
+
 def sync_pending(conn, max_batches=40, timeout=10):
     """Drain unsynced events to the Worker. The only place that sends.
 
@@ -724,6 +761,8 @@ def sync_pending(conn, max_batches=40, timeout=10):
     """
     try:
         if not WORKER_INGEST_URL:
+            if publish_configured():
+                return False  # serverless: nothing is sent anywhere; auto_publish runs instead
             _log_throttled(
                 "worker-url-missing",
                 f"sync_pending: no Worker URL (set DEVCARD_WORKER_URL or write {WORKER_URL_PATH}); "

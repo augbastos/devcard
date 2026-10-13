@@ -60,6 +60,7 @@ class GitRepoCase(unittest.TestCase):
             ("ERROR_LOG_PATH", "errors.log"),
             ("SOURCE_ID_PATH", "source-id"),
             ("GITHUB_CACHE_PATH", "github-repos.json"),
+            ("CONFIG_PATH", "config.json"),
         ):
             patcher = mock.patch.object(lib, attr, os.path.join(self.devcard_home, name))
             patcher.start()

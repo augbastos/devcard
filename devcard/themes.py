@@ -90,3 +90,18 @@ def css_for(theme):
     if theme.get("dark"):
         css += f"@media(prefers-color-scheme:dark){{{_token_css(theme['dark'])}}}"
     return css + LANGUAGE_HOVER_CSS
+
+
+def theme_pair(name):
+    """(light, dark) palettes for the two published files.
+
+    GitHub chooses between them with <picture> and the viewer's GitHub theme, so
+    each file has to be one look: `default` splits into its light and dark
+    halves instead of carrying the prefers-color-scheme override, which inside
+    an image follows the operating system rather than GitHub. A single-look
+    theme is published as both.
+    """
+    name = theme_name(name)
+    if name == "default":
+        return {"base": DEFAULT_LIGHT}, {"base": DEFAULT_DARK}
+    return THEMES[name], THEMES[name]

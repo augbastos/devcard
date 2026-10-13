@@ -17,3 +17,8 @@ worker/wrangler.toml
 .worktrees/
 .superpowers/
 docs/superpowers/
+
+# Python packaging output
+build/
+dist/
+*.egg-info/

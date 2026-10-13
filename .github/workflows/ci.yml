@@ -1,9 +1,10 @@
 name: ci
 
-# The product's own CI: the Python hook and installer, and the Worker. Nothing
-# here touches Cloudflare — the Worker suite runs in workerd against a local D1
-# through @cloudflare/vitest-plugin — so no account and no secret is involved,
-# and a fork's pull request runs everything like any other.
+# The product's own CI: the Python hook, installer and devcard package, and the
+# legacy Worker. Nothing here touches Cloudflare — the Worker suite runs in
+# workerd against a local D1 through @cloudflare/vitest-plugin — so no account
+# and no secret is involved, and a fork's pull request runs everything like any
+# other.
 #
 # The scpe workflows next to this one check AI-use disclosure, and security.yml
 # holds the scanners; neither says anything about whether the code works.
@@ -60,6 +61,18 @@ jobs:
       - name: Run the hook and installer test suites
         run: python -m unittest discover -s hook -p "test_*.py" -v
 
+      - name: Give Windows an IANA time-zone database
+        # Windows ships none, and the golden tests render in Asia/Tokyo.
+        # pyproject.toml declares the same dependency for a pipx install.
+        if: runner.os == 'Windows'
+        run: python -m pip install tzdata==2025.2
+
+      - name: Run the devcard package test suite
+        # The Python renderer against the golden SVGs, render/publish against
+        # temporary local bare repositories, `devcard init`, and a git hook
+        # process publishing on its own. No network.
+        run: python -m unittest discover -s tests -t . -v
+
   python-lint:
     name: python lint
     runs-on: ubuntu-latest
@@ -72,6 +85,39 @@ jobs:
       - name: Ruff (rules in ruff.toml)
         # pipx ships on the hosted runner; the version is pinned here.
         run: pipx run ruff==0.16.7 check --output-format github .
+
+  package:
+    name: package (pipx install)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Install from the checkout as a user would from GitHub
+        # pipx ships on the hosted runner. `pipx install git+https://...` builds
+        # the same wheel from the same pyproject.toml.
+        run: pipx install .
+
+      - name: Smoke-test the installed command and hook modules
+        env:
+          HOME: ${{ runner.temp }}/home
+        run: |
+          mkdir -p "$HOME"
+          devcard --version
+          devcard render --user devcard-ci --out "$RUNNER_TEMP/card"
+          grep -q '<svg' "$RUNNER_TEMP/card/card.svg"
+          grep -q '<svg' "$RUNNER_TEMP/card/card-dark.svg"
+          # The hooks run as `python -S <site-packages>/<hook>.py`: no site
+          # import, only the script's own directory on sys.path.
+          venv_python="$(pipx environment --value PIPX_LOCAL_VENVS)/devcard/bin/python"
+          site_dir="$("$venv_python" -c 'import os, devcard_lib; print(os.path.dirname(devcard_lib.__file__))')"
+          "$venv_python" -S -c "import sys; sys.path.insert(0, sys.argv[1]); import devcard_lib, devcard_capture, devcard_sync, devcard_git_hook, install_git_hook, install_claude_hook; from devcard import publish" "$site_dir"
 
   worker:
     name: worker (node ${{ matrix.node-version }})
@@ -121,7 +167,7 @@ jobs:
     # that no longer exists blocks every pull request; this name never changes.
     name: ci-ok
     if: always()
-    needs: [hook, python-lint, worker]
+    needs: [hook, python-lint, package, worker]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:

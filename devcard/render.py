@@ -40,9 +40,12 @@ LAYOUTS = ("full", "wide", "banner", "half", "vertical")
 
 
 def render(data, theme="default", lang="en", layout="full", now=0, all_langs=False, static=False):
-    """Render one variant. Unknown names fall back, as the Worker's query params do."""
+    """Render one variant. Unknown names fall back, as the Worker's query params do.
+
+    `theme` is a theme name or a palette dict as themes.theme_pair returns.
+    """
     t = STRINGS[lang_name(lang)]
-    tokens = THEMES[theme_name(theme)]
+    tokens = theme if isinstance(theme, dict) else THEMES[theme_name(theme)]
     if layout == "wide":
         return render_wide(data, tokens, t, now, all_langs, static)
     if layout == "banner":

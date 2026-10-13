@@ -1,0 +1,35 @@
+# The serverless devcard: `pipx install git+https://github.com/augbastos/devcard`.
+#
+# One runtime, Python, and nothing from PyPI at run time except `tzdata` on
+# Windows (which ships no IANA time-zone database, and `timezone` in the config
+# needs one). Node is only for developing the legacy Worker in worker/.
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "devcard"
+dynamic = ["version"]
+description = "A coding-activity card, rendered on your machine and published to a branch of your own repository."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = ['tzdata; sys_platform == "win32"']
+
+[project.urls]
+Homepage = "https://github.com/augbastos/devcard"
+
+[project.scripts]
+devcard = "devcard.cli:main"
+
+[tool.setuptools]
+# The hooks are plain scripts that run as `python -S hook_file.py` and import
+# their neighbours by file location, so they install as top-level modules next
+# to the package — the layout they already have in hook/. Tests stay out.
+packages = ["devcard"]
+package-dir = { "" = "hook", "devcard" = "devcard" }
+py-modules = ["devcard_lib", "devcard_capture", "devcard_sync", "devcard_git_hook", "install_git_hook", "install_claude_hook"]
+
+[tool.setuptools.dynamic]
+version = { attr = "devcard.__version__" }
