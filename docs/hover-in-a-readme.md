@@ -1,5 +1,9 @@
 # Hover, and how it reaches a GitHub README
 
+> **Legacy.** The split, hoverable card is served by the Cloudflare Worker. The recommended install is now the
+> [serverless card](serverless.md): `pipx install git+https://github.com/augbastos/devcard`
+> then `devcard init`. The Worker stays in `worker/` until the existing card is migrated.
+
 The card's language bar names the language under the pointer. Getting that to
 work inside a README meant giving up the idea that a card is one image. This
 file records the measurements behind that, so the next person does not have to

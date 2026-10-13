@@ -1,5 +1,12 @@
 # devcard worker
 
+> **Legacy.** The recommended devcard no longer needs this Worker: the card is
+> rendered by the `devcard` Python package and published to a branch of your own
+> repository (see [docs/serverless.md](../docs/serverless.md)). This directory
+> stays, tested and deployable, until the existing Worker card is migrated. Its
+> renderer also produces the golden SVGs the Python renderer is held to
+> (`test/golden.test.ts` → `../tests/golden/`).
+
 The backend: `POST /ingest` (called by the local hook), `GET /svg` (the public
 card), `GET /embed` (the hoverable README block), and a nightly cron that
 rebuilds the rollups.

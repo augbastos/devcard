@@ -1,15 +1,20 @@
 # devcard — notes for coding agents
 
-A live, embeddable SVG card built from real coding activity. A local Python hook
-captures events into SQLite; a background syncer sends anonymized rows to a
-Cloudflare Worker; the Worker stores them in D1, keeps rollup tables, and renders
-the card. Public repository, MIT.
+An embeddable SVG card built from real coding activity. A local Python hook
+captures events into SQLite. The `devcard` package folds them into per-machine
+aggregates, renders the card on the machine, and commits it to the orphan branch
+`devcard-data` of a public repository the user owns. Public repository, MIT.
 
 ```
-Claude Code PostToolUse hook ─┐
-                              ├─> local SQLite (offline-first) ─> syncer ─> POST /ingest ─> Worker ─> D1 ─> rollups ─> GET /svg
-git post-commit hook ─────────┘
+Claude Code PostToolUse hook ─┐                                   ┌─ machines/<source_id>.json (this machine only)
+                              ├─> local SQLite ─> devcard publish ┤  + every other machine's file, merged
+git post-commit hook ─────────┘   (offline-first)  (≤ 1 per 15 min) └─> card.svg, card-dark.svg ─> one commit on devcard-data
 ```
+
+The **legacy** path — syncer ─> `POST /ingest` ─> Cloudflare Worker ─> D1 ─>
+rollups ─> `GET /svg` — still works and still serves the maintainer's card. It
+stays in `worker/` until that card is migrated; do not delete it, and do not
+break it. A machine with both a Worker URL and `config.json` feeds both.
 
 This file holds what stays true. What changed and when belongs in `CHANGELOG.md`,
 commits and pull requests — not here.
@@ -22,7 +27,14 @@ commits and pull requests — not here.
 | `hook/devcard_capture.py` | Claude Code hook entrypoint. Hot path: parse, insert, maybe spawn the syncer. |
 | `hook/devcard_sync.py` | Detached syncer: drains, then drains once more when the throttle window closes. |
 | `hook/devcard_git_hook.py`, `hook/install_git_hook.py` | git mode: per-commit capture, and its installer. |
-| `install.py` | End-to-end installer (Cloudflare provisioning, config render, token, hook). |
+| `hook/install_claude_hook.py` | Registers the capture hook in Claude Code's settings.json. Shared by both installers. |
+| `devcard/data.py` | Per-machine aggregate from the local SQLite, merge across machines, heatmap/streak. |
+| `devcard/render.py`, `svg.py`, `themes.py`, `strings.py`, `jsfmt.py` | Pure Python port of the Worker's renderers. |
+| `devcard/publish.py` | `render`/`publish`: git plumbing in a private bare repo, debounce, lease, avatar cache. |
+| `devcard/cli.py`, `config.py` | `devcard init/render/publish/status`; `~/.claude/devcard/config.json`. |
+| `pyproject.toml` | `pipx install git+https://github.com/augbastos/devcard`. Ships `devcard/` plus the hook modules as top-level modules. |
+| `tests/` | The package's suite; `tests/golden/` holds the reference SVGs and the events behind them. |
+| `install.py` | Legacy end-to-end installer (Cloudflare provisioning, config render, token, hook). |
 | `worker/src/index.ts` | Routing, ingest validation and caps, rollup maintenance, nightly rebuild. |
 | `worker/src/variants.ts` | Request → (lang, theme, layout, part) resolution and the cache key. |
 | `worker/src/queries.ts` | Every D1 read the card makes. Reads rollups only, never `events`. |
@@ -35,7 +47,9 @@ commits and pull requests — not here.
 
 ```bash
 python -m unittest discover -s hook -p "test_*.py"   # hook, git integration, installer
+python -m unittest discover -s tests -t .             # devcard package (golden SVGs, publish, init)
 pipx run ruff==0.16.7 check .                         # lint (rules in ruff.toml)
+python -m devcard --help                              # the CLI from a checkout
 
 cd worker
 npm ci                 # locked toolchain; .npmrc disables dependency install scripts
@@ -47,15 +61,25 @@ npm run deploy         # the maintainer's call, never an agent's side effect
 ```
 
 Version floors live in two places: `MIN_PYTHON` in `install.py` and
-`engines.node` in `worker/package.json`. Tests fail if CI's matrix, the README or
-`ruff.toml`'s target version disagree with them.
+`engines.node` in `worker/package.json`. Tests fail if CI's matrix, the README,
+`ruff.toml`'s target version, `devcard/cli.py` or `pyproject.toml` disagree.
 
 ## Invariants — never break these
 
-- **No project name, path, file name or code content reaches D1 or the card.**
-  The sync payload is a SQL projection without `project_key`, and D1 has no
-  column that could hold one. Tests assert this on the serialized bytes. Any new
-  field must keep it true.
+- **No project name, path, file name or code content reaches D1, the card or the
+  `devcard-data` branch.** The sync payload and a machine file are both SQL
+  projections without `project_key`, and D1 has no column that could hold one.
+  Tests assert this on the serialized bytes. Any new field must keep it true.
+- **The Python renderer matches the golden SVGs.** `tests/golden/` is rendered by
+  the Worker (`worker/test/golden.test.ts`) and checked by `tests/test_golden.py`.
+  Change both renderers together, or regenerate on purpose — never edit a golden
+  file by hand.
+- **A machine writes only its own `machines/<source_id>.json`.** Others' files are
+  carried over byte for byte; the push is a `--force-with-lease` against the
+  commit that was read. Counts are summed across machines; `repo_count` is the
+  maximum, never the sum.
+- **Publishing never uses the user's git identity or global config**, and never
+  creates repositories, gists or any branch but `devcard-data`.
 - **`INGEST_TOKEN` is never printed, logged, committed or put in a URL or body.**
   It is a Worker secret, plus one owner-only local copy (`~/.claude/devcard/token`)
   or `DEVCARD_INGEST_TOKEN`. Read it into a variable; never echo it.
@@ -94,7 +118,8 @@ Version floors live in two places: `MIN_PYTHON` in `install.py` and
 ## Rules for tests
 
 - **A test must never touch `~/.claude/devcard/`.** Redirect `DB_PATH`,
-  `ERROR_LOG_PATH`, `SOURCE_ID_PATH`, `GITHUB_CACHE_PATH`, and set
+  `ERROR_LOG_PATH`, `SOURCE_ID_PATH`, `GITHUB_CACHE_PATH`, `CONFIG_PATH` (and for
+  the package, `devcard.config.HOME` — `tests/helpers.Home` does all of it), and set
   `WORKER_INGEST_URL`/`INGEST_TOKEN` to stand-ins. Paths are read from the module
   at call time for exactly this reason — do not turn them back into default
   arguments, which bind at import and make patching a no-op.
@@ -103,6 +128,9 @@ Version floors live in two places: `MIN_PYTHON` in `install.py` and
   `vitest.config.mts`; a local `.dev.vars` must not change what a test sees.
 - Outbound requests are answered by `outboundService` in `vitest.config.mts`;
   anything unmocked returns 599 rather than reaching the network.
+- Publishing is tested against temporary local bare repositories only. Package
+  tests stub the GitHub API repo count and the avatar download; a subprocess test
+  strips `GH_*`/`GITHUB_*` tokens from its environment.
 
 ## Gotchas
 
@@ -119,6 +147,13 @@ Version floors live in two places: `MIN_PYTHON` in `install.py` and
 - `repo_count` is the GitHub owned-repository total read through the local `gh`
   CLI (public + private); the no-`gh` fallback is distinct git roots. The raw
   count of recorded working directories is never published.
+- Opening the hook database when it does not exist yet retires `source_id`
+  (`init_db`). Read the machine id only after the database is open, or the first
+  publish names a file that the next publish abandons.
+- The hooks run as `python -S <dir>/<hook>.py`: no site-packages, only the
+  script's directory on `sys.path`. That is why pyproject installs the hook
+  modules next to the `devcard` package, and why `lib.auto_publish` falls back
+  to the parent directory in a checkout.
 - An SVG inside `<img>` receives no pointer events, and GitHub strips every
   element that could carry them — hence the split `?part=` card and
   `docs/hover-in-a-readme.md`.

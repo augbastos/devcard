@@ -58,7 +58,16 @@ Most merges never reach the hook at all: git runs `post-merge`, not
 are `--no-commit` merges and conflict resolutions, which end in an explicit
 `git commit`.
 
-## Event identity, and using two machines
+## Using two machines with the serverless card
+
+Each machine publishes its own totals as `machines/<source_id>.json` on the
+`devcard-data` branch and renders the card from every machine's file: lines,
+languages, events, bytes and lines per day are summed; the repository count is
+the largest any machine reports (they all read the same GitHub account), not
+the sum. Days are each machine's own local days. See
+[the serverless card](serverless.md#several-machines).
+
+## Event identity, and using two machines with the legacy Worker
 
 Each event carries the local SQLite rowid that produced it, and ingest ignores a
 row it has already stored — that is what makes a retried batch after a lost
