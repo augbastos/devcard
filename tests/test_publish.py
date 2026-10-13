@@ -147,10 +147,12 @@ class PublishTest(TempDirTest):
         self.assertIn(">151<", card)
         self.assertIn("9 repos", card)  # the same account seen twice, not 18
 
+        desktop_bytes = self.show(f"machines/{desktop_id}.json")
         with Home(self.tmp, "laptop") as laptop:
             laptop.add_events([edit(NOW + 100, "Python", 9)])
             run(cfg_for(self.remote), now=NOW + 200, force=True)
-        self.assertIn(f"machines/{desktop_id}.json", self.tree())
+        # A machine writes its own file only; the other's is carried over as is.
+        self.assertEqual(self.show(f"machines/{desktop_id}.json"), desktop_bytes)
         self.assertIn(">160<", self.show("card.svg"))
         self.assertEqual(json.loads(self.show(f"machines/{desktop_id}.json"))["languages"],
                          {"Python": 1, "Rust": 50})
