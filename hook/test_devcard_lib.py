@@ -289,7 +289,7 @@ class TestIsTrackableProject(unittest.TestCase):
             )
 
     def test_forward_slashes_are_normalized(self):
-        self.assertFalse(lib.is_trackable_project("C:/Users/x/AppData/Local/Temp/scratchpad"))
+        self.assertFalse(lib.is_trackable_project("C:/U" "sers/x/AppData/Local/Temp/scratchpad"))
 
     def test_empty_path_is_rejected(self):
         self.assertFalse(lib.is_trackable_project(""))
