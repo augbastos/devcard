@@ -1,0 +1,2799 @@
+{
+ "now": 1760000000,
+ "timezone": "Asia/Tokyo",
+ "github_user": "devcard-test",
+ "avatar": "data:image/png;base64,UE5HREFUQQ==",
+ "fixtures": {
+  "seed": {
+   "events": [
+    {
+     "ts": 1759740800,
+     "language": "Python",
+     "lines_added": 120,
+     "lines_removed": 0,
+     "bytes_added": 100,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1759740800,
+     "language": "TypeScript",
+     "lines_added": 80,
+     "lines_removed": 0,
+     "bytes_added": 100,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1759740800,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 100,
+     "event_type": "commit"
+    }
+   ],
+   "repo_count": 40,
+   "updated_at": 1759999580
+  },
+  "rich": {
+   "events": [
+    {
+     "ts": 1759988263,
+     "language": "Python",
+     "lines_added": 1371,
+     "lines_removed": 342,
+     "bytes_added": 45243,
+     "event_type": "write"
+    },
+    {
+     "ts": 1759910403,
+     "language": "Python",
+     "lines_added": 904,
+     "lines_removed": 226,
+     "bytes_added": 29832,
+     "event_type": "write"
+    },
+    {
+     "ts": 1759824372,
+     "language": "Python",
+     "lines_added": 873,
+     "lines_removed": 218,
+     "bytes_added": 28809,
+     "event_type": "write"
+    },
+    {
+     "ts": 1759734097,
+     "language": "Python",
+     "lines_added": 487,
+     "lines_removed": 121,
+     "bytes_added": 16071,
+     "event_type": "write"
+    },
+    {
+     "ts": 1759644443,
+     "language": "Python",
+     "lines_added": 1239,
+     "lines_removed": 309,
+     "bytes_added": 40887,
+     "event_type": "write"
+    },
+    {
+     "ts": 1759548598,
+     "language": "Python",
+     "lines_added": 715,
+     "lines_removed": 178,
+     "bytes_added": 23595,
+     "event_type": "write"
+    },
+    {
+     "ts": 1759476547,
+     "language": "Python",
+     "lines_added": 1044,
+     "lines_removed": 261,
+     "bytes_added": 34452,
+     "event_type": "write"
+    },
+    {
+     "ts": 1759378159,
+     "language": "Python",
+     "lines_added": 1146,
+     "lines_removed": 286,
+     "bytes_added": 37818,
+     "event_type": "write"
+    },
+    {
+     "ts": 1759291944,
+     "language": "Python",
+     "lines_added": 474,
+     "lines_removed": 118,
+     "bytes_added": 15642,
+     "event_type": "write"
+    },
+    {
+     "ts": 1759034050,
+     "language": "Python",
+     "lines_added": 593,
+     "lines_removed": 148,
+     "bytes_added": 19569,
+     "event_type": "write"
+    },
+    {
+     "ts": 1758864942,
+     "language": "Python",
+     "lines_added": 749,
+     "lines_removed": 187,
+     "bytes_added": 24717,
+     "event_type": "write"
+    },
+    {
+     "ts": 1758769528,
+     "language": "Python",
+     "lines_added": 1104,
+     "lines_removed": 276,
+     "bytes_added": 36432,
+     "event_type": "write"
+    },
+    {
+     "ts": 1758701667,
+     "language": "Python",
+     "lines_added": 790,
+     "lines_removed": 197,
+     "bytes_added": 26070,
+     "event_type": "write"
+    },
+    {
+     "ts": 1758612291,
+     "language": "Python",
+     "lines_added": 399,
+     "lines_removed": 99,
+     "bytes_added": 13167,
+     "event_type": "write"
+    },
+    {
+     "ts": 1758527126,
+     "language": "Python",
+     "lines_added": 1062,
+     "lines_removed": 265,
+     "bytes_added": 35046,
+     "event_type": "write"
+    },
+    {
+     "ts": 1758434373,
+     "language": "Python",
+     "lines_added": 803,
+     "lines_removed": 200,
+     "bytes_added": 26499,
+     "event_type": "write"
+    },
+    {
+     "ts": 1758168332,
+     "language": "Python",
+     "lines_added": 921,
+     "lines_removed": 230,
+     "bytes_added": 30393,
+     "event_type": "write"
+    },
+    {
+     "ts": 1758081208,
+     "language": "Python",
+     "lines_added": 684,
+     "lines_removed": 171,
+     "bytes_added": 22572,
+     "event_type": "write"
+    },
+    {
+     "ts": 1757911074,
+     "language": "Python",
+     "lines_added": 1085,
+     "lines_removed": 271,
+     "bytes_added": 35805,
+     "event_type": "write"
+    },
+    {
+     "ts": 1757746179,
+     "language": "Python",
+     "lines_added": 652,
+     "lines_removed": 163,
+     "bytes_added": 21516,
+     "event_type": "write"
+    },
+    {
+     "ts": 1757567256,
+     "language": "Python",
+     "lines_added": 385,
+     "lines_removed": 96,
+     "bytes_added": 12705,
+     "event_type": "write"
+    },
+    {
+     "ts": 1757395161,
+     "language": "Python",
+     "lines_added": 710,
+     "lines_removed": 177,
+     "bytes_added": 23430,
+     "event_type": "write"
+    },
+    {
+     "ts": 1757319660,
+     "language": "Python",
+     "lines_added": 479,
+     "lines_removed": 119,
+     "bytes_added": 15807,
+     "event_type": "write"
+    },
+    {
+     "ts": 1757233309,
+     "language": "Python",
+     "lines_added": 542,
+     "lines_removed": 135,
+     "bytes_added": 17886,
+     "event_type": "write"
+    },
+    {
+     "ts": 1757142394,
+     "language": "Python",
+     "lines_added": 1135,
+     "lines_removed": 283,
+     "bytes_added": 37455,
+     "event_type": "write"
+    },
+    {
+     "ts": 1757058861,
+     "language": "Python",
+     "lines_added": 1176,
+     "lines_removed": 294,
+     "bytes_added": 38808,
+     "event_type": "write"
+    },
+    {
+     "ts": 1756875455,
+     "language": "Python",
+     "lines_added": 504,
+     "lines_removed": 126,
+     "bytes_added": 16632,
+     "event_type": "write"
+    },
+    {
+     "ts": 1756612856,
+     "language": "Python",
+     "lines_added": 1261,
+     "lines_removed": 315,
+     "bytes_added": 41613,
+     "event_type": "write"
+    },
+    {
+     "ts": 1756538960,
+     "language": "Python",
+     "lines_added": 943,
+     "lines_removed": 235,
+     "bytes_added": 31119,
+     "event_type": "write"
+    },
+    {
+     "ts": 1756439987,
+     "language": "Python",
+     "lines_added": 390,
+     "lines_removed": 97,
+     "bytes_added": 12870,
+     "event_type": "write"
+    },
+    {
+     "ts": 1756096343,
+     "language": "Python",
+     "lines_added": 624,
+     "lines_removed": 156,
+     "bytes_added": 20592,
+     "event_type": "write"
+    },
+    {
+     "ts": 1756024394,
+     "language": "Python",
+     "lines_added": 897,
+     "lines_removed": 224,
+     "bytes_added": 29601,
+     "event_type": "write"
+    },
+    {
+     "ts": 1755938796,
+     "language": "Python",
+     "lines_added": 429,
+     "lines_removed": 107,
+     "bytes_added": 14157,
+     "event_type": "write"
+    },
+    {
+     "ts": 1755836178,
+     "language": "Python",
+     "lines_added": 672,
+     "lines_removed": 168,
+     "bytes_added": 22176,
+     "event_type": "write"
+    },
+    {
+     "ts": 1755759765,
+     "language": "Python",
+     "lines_added": 723,
+     "lines_removed": 180,
+     "bytes_added": 23859,
+     "event_type": "write"
+    },
+    {
+     "ts": 1755486335,
+     "language": "Python",
+     "lines_added": 843,
+     "lines_removed": 210,
+     "bytes_added": 27819,
+     "event_type": "write"
+    },
+    {
+     "ts": 1755333065,
+     "language": "Python",
+     "lines_added": 786,
+     "lines_removed": 196,
+     "bytes_added": 25938,
+     "event_type": "write"
+    },
+    {
+     "ts": 1755152482,
+     "language": "Python",
+     "lines_added": 1414,
+     "lines_removed": 353,
+     "bytes_added": 46662,
+     "event_type": "write"
+    },
+    {
+     "ts": 1755056622,
+     "language": "Python",
+     "lines_added": 1395,
+     "lines_removed": 348,
+     "bytes_added": 46035,
+     "event_type": "write"
+    },
+    {
+     "ts": 1754968227,
+     "language": "Python",
+     "lines_added": 902,
+     "lines_removed": 225,
+     "bytes_added": 29766,
+     "event_type": "write"
+    },
+    {
+     "ts": 1754726468,
+     "language": "Python",
+     "lines_added": 1393,
+     "lines_removed": 348,
+     "bytes_added": 45969,
+     "event_type": "write"
+    },
+    {
+     "ts": 1754466586,
+     "language": "Python",
+     "lines_added": 1133,
+     "lines_removed": 283,
+     "bytes_added": 37389,
+     "event_type": "write"
+    },
+    {
+     "ts": 1754374165,
+     "language": "Python",
+     "lines_added": 370,
+     "lines_removed": 92,
+     "bytes_added": 12210,
+     "event_type": "write"
+    },
+    {
+     "ts": 1754206326,
+     "language": "Python",
+     "lines_added": 391,
+     "lines_removed": 97,
+     "bytes_added": 12903,
+     "event_type": "write"
+    },
+    {
+     "ts": 1754025787,
+     "language": "Python",
+     "lines_added": 423,
+     "lines_removed": 105,
+     "bytes_added": 13959,
+     "event_type": "write"
+    },
+    {
+     "ts": 1753941332,
+     "language": "Python",
+     "lines_added": 895,
+     "lines_removed": 223,
+     "bytes_added": 29535,
+     "event_type": "write"
+    },
+    {
+     "ts": 1753689988,
+     "language": "Python",
+     "lines_added": 954,
+     "lines_removed": 238,
+     "bytes_added": 31482,
+     "event_type": "write"
+    },
+    {
+     "ts": 1753601705,
+     "language": "Python",
+     "lines_added": 1277,
+     "lines_removed": 319,
+     "bytes_added": 42141,
+     "event_type": "write"
+    },
+    {
+     "ts": 1753510089,
+     "language": "Python",
+     "lines_added": 389,
+     "lines_removed": 97,
+     "bytes_added": 12837,
+     "event_type": "write"
+    },
+    {
+     "ts": 1753421140,
+     "language": "Python",
+     "lines_added": 886,
+     "lines_removed": 221,
+     "bytes_added": 29238,
+     "event_type": "write"
+    },
+    {
+     "ts": 1753334214,
+     "language": "Python",
+     "lines_added": 1142,
+     "lines_removed": 285,
+     "bytes_added": 37686,
+     "event_type": "write"
+    },
+    {
+     "ts": 1753078293,
+     "language": "Python",
+     "lines_added": 575,
+     "lines_removed": 143,
+     "bytes_added": 18975,
+     "event_type": "write"
+    },
+    {
+     "ts": 1752991962,
+     "language": "Python",
+     "lines_added": 1134,
+     "lines_removed": 283,
+     "bytes_added": 37422,
+     "event_type": "write"
+    },
+    {
+     "ts": 1752901604,
+     "language": "Python",
+     "lines_added": 447,
+     "lines_removed": 111,
+     "bytes_added": 14751,
+     "event_type": "write"
+    },
+    {
+     "ts": 1752645579,
+     "language": "Python",
+     "lines_added": 1054,
+     "lines_removed": 263,
+     "bytes_added": 34782,
+     "event_type": "write"
+    },
+    {
+     "ts": 1752562365,
+     "language": "Python",
+     "lines_added": 1298,
+     "lines_removed": 324,
+     "bytes_added": 42834,
+     "event_type": "write"
+    },
+    {
+     "ts": 1752379749,
+     "language": "Python",
+     "lines_added": 614,
+     "lines_removed": 153,
+     "bytes_added": 20262,
+     "event_type": "write"
+    },
+    {
+     "ts": 1752212296,
+     "language": "Python",
+     "lines_added": 957,
+     "lines_removed": 239,
+     "bytes_added": 31581,
+     "event_type": "write"
+    },
+    {
+     "ts": 1751958842,
+     "language": "Python",
+     "lines_added": 1189,
+     "lines_removed": 297,
+     "bytes_added": 39237,
+     "event_type": "write"
+    },
+    {
+     "ts": 1751878196,
+     "language": "Python",
+     "lines_added": 373,
+     "lines_removed": 93,
+     "bytes_added": 12309,
+     "event_type": "write"
+    },
+    {
+     "ts": 1751789058,
+     "language": "Python",
+     "lines_added": 814,
+     "lines_removed": 203,
+     "bytes_added": 26862,
+     "event_type": "write"
+    },
+    {
+     "ts": 1751696694,
+     "language": "Python",
+     "lines_added": 525,
+     "lines_removed": 131,
+     "bytes_added": 17325,
+     "event_type": "write"
+    },
+    {
+     "ts": 1751344443,
+     "language": "Python",
+     "lines_added": 983,
+     "lines_removed": 245,
+     "bytes_added": 32439,
+     "event_type": "write"
+    },
+    {
+     "ts": 1751169344,
+     "language": "Python",
+     "lines_added": 839,
+     "lines_removed": 209,
+     "bytes_added": 27687,
+     "event_type": "write"
+    },
+    {
+     "ts": 1750752899,
+     "language": "Python",
+     "lines_added": 581,
+     "lines_removed": 145,
+     "bytes_added": 19173,
+     "event_type": "write"
+    },
+    {
+     "ts": 1750562867,
+     "language": "Python",
+     "lines_added": 1066,
+     "lines_removed": 266,
+     "bytes_added": 35178,
+     "event_type": "write"
+    },
+    {
+     "ts": 1750478472,
+     "language": "Python",
+     "lines_added": 469,
+     "lines_removed": 117,
+     "bytes_added": 15477,
+     "event_type": "write"
+    },
+    {
+     "ts": 1750320890,
+     "language": "Python",
+     "lines_added": 5758,
+     "lines_removed": 1439,
+     "bytes_added": 190014,
+     "event_type": "write"
+    },
+    {
+     "ts": 1759979993,
+     "language": "TypeScript",
+     "lines_added": 440,
+     "lines_removed": 110,
+     "bytes_added": 14520,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1759899714,
+     "language": "TypeScript",
+     "lines_added": 256,
+     "lines_removed": 64,
+     "bytes_added": 8448,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1759824450,
+     "language": "TypeScript",
+     "lines_added": 753,
+     "lines_removed": 188,
+     "bytes_added": 24849,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1759720069,
+     "language": "TypeScript",
+     "lines_added": 274,
+     "lines_removed": 68,
+     "bytes_added": 9042,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1759635795,
+     "language": "TypeScript",
+     "lines_added": 554,
+     "lines_removed": 138,
+     "bytes_added": 18282,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1759561729,
+     "language": "TypeScript",
+     "lines_added": 508,
+     "lines_removed": 127,
+     "bytes_added": 16764,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1759476529,
+     "language": "TypeScript",
+     "lines_added": 489,
+     "lines_removed": 122,
+     "bytes_added": 16137,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1759383178,
+     "language": "TypeScript",
+     "lines_added": 711,
+     "lines_removed": 177,
+     "bytes_added": 23463,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1759299740,
+     "language": "TypeScript",
+     "lines_added": 468,
+     "lines_removed": 117,
+     "bytes_added": 15444,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1759043738,
+     "language": "TypeScript",
+     "lines_added": 461,
+     "lines_removed": 115,
+     "bytes_added": 15213,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1758864999,
+     "language": "TypeScript",
+     "lines_added": 496,
+     "lines_removed": 124,
+     "bytes_added": 16368,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1758784674,
+     "language": "TypeScript",
+     "lines_added": 843,
+     "lines_removed": 210,
+     "bytes_added": 27819,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1758686550,
+     "language": "TypeScript",
+     "lines_added": 482,
+     "lines_removed": 120,
+     "bytes_added": 15906,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1758600551,
+     "language": "TypeScript",
+     "lines_added": 844,
+     "lines_removed": 211,
+     "bytes_added": 27852,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1758514561,
+     "language": "TypeScript",
+     "lines_added": 453,
+     "lines_removed": 113,
+     "bytes_added": 14949,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1758441029,
+     "language": "TypeScript",
+     "lines_added": 440,
+     "lines_removed": 110,
+     "bytes_added": 14520,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1758174155,
+     "language": "TypeScript",
+     "lines_added": 720,
+     "lines_removed": 180,
+     "bytes_added": 23760,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1758089971,
+     "language": "TypeScript",
+     "lines_added": 631,
+     "lines_removed": 157,
+     "bytes_added": 20823,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1757911814,
+     "language": "TypeScript",
+     "lines_added": 333,
+     "lines_removed": 83,
+     "bytes_added": 10989,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1757746029,
+     "language": "TypeScript",
+     "lines_added": 471,
+     "lines_removed": 117,
+     "bytes_added": 15543,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1757561177,
+     "language": "TypeScript",
+     "lines_added": 791,
+     "lines_removed": 197,
+     "bytes_added": 26103,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1757403461,
+     "language": "TypeScript",
+     "lines_added": 321,
+     "lines_removed": 80,
+     "bytes_added": 10593,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1757316346,
+     "language": "TypeScript",
+     "lines_added": 469,
+     "lines_removed": 117,
+     "bytes_added": 15477,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1757234162,
+     "language": "TypeScript",
+     "lines_added": 322,
+     "lines_removed": 80,
+     "bytes_added": 10626,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1757132251,
+     "language": "TypeScript",
+     "lines_added": 692,
+     "lines_removed": 173,
+     "bytes_added": 22836,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1757052775,
+     "language": "TypeScript",
+     "lines_added": 382,
+     "lines_removed": 95,
+     "bytes_added": 12606,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1756878880,
+     "language": "TypeScript",
+     "lines_added": 536,
+     "lines_removed": 134,
+     "bytes_added": 17688,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1756622880,
+     "language": "TypeScript",
+     "lines_added": 435,
+     "lines_removed": 108,
+     "bytes_added": 14355,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1756543036,
+     "language": "TypeScript",
+     "lines_added": 782,
+     "lines_removed": 195,
+     "bytes_added": 25806,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1756437328,
+     "language": "TypeScript",
+     "lines_added": 650,
+     "lines_removed": 162,
+     "bytes_added": 21450,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1756100308,
+     "language": "TypeScript",
+     "lines_added": 400,
+     "lines_removed": 100,
+     "bytes_added": 13200,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1756020560,
+     "language": "TypeScript",
+     "lines_added": 893,
+     "lines_removed": 223,
+     "bytes_added": 29469,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1755933213,
+     "language": "TypeScript",
+     "lines_added": 493,
+     "lines_removed": 123,
+     "bytes_added": 16269,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1755848947,
+     "language": "TypeScript",
+     "lines_added": 656,
+     "lines_removed": 164,
+     "bytes_added": 21648,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1755757497,
+     "language": "TypeScript",
+     "lines_added": 435,
+     "lines_removed": 108,
+     "bytes_added": 14355,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1755502586,
+     "language": "TypeScript",
+     "lines_added": 263,
+     "lines_removed": 65,
+     "bytes_added": 8679,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1755330288,
+     "language": "TypeScript",
+     "lines_added": 744,
+     "lines_removed": 186,
+     "bytes_added": 24552,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1755143982,
+     "language": "TypeScript",
+     "lines_added": 654,
+     "lines_removed": 163,
+     "bytes_added": 21582,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1755055672,
+     "language": "TypeScript",
+     "lines_added": 369,
+     "lines_removed": 92,
+     "bytes_added": 12177,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1754980545,
+     "language": "TypeScript",
+     "lines_added": 474,
+     "lines_removed": 118,
+     "bytes_added": 15642,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1754724454,
+     "language": "TypeScript",
+     "lines_added": 336,
+     "lines_removed": 84,
+     "bytes_added": 11088,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1754465359,
+     "language": "TypeScript",
+     "lines_added": 870,
+     "lines_removed": 217,
+     "bytes_added": 28710,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1754372963,
+     "language": "TypeScript",
+     "lines_added": 264,
+     "lines_removed": 66,
+     "bytes_added": 8712,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1754191941,
+     "language": "TypeScript",
+     "lines_added": 514,
+     "lines_removed": 128,
+     "bytes_added": 16962,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1754033296,
+     "language": "TypeScript",
+     "lines_added": 502,
+     "lines_removed": 125,
+     "bytes_added": 16566,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1753946580,
+     "language": "TypeScript",
+     "lines_added": 623,
+     "lines_removed": 155,
+     "bytes_added": 20559,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1753674028,
+     "language": "TypeScript",
+     "lines_added": 335,
+     "lines_removed": 83,
+     "bytes_added": 11055,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1753596653,
+     "language": "TypeScript",
+     "lines_added": 715,
+     "lines_removed": 178,
+     "bytes_added": 23595,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1753513460,
+     "language": "TypeScript",
+     "lines_added": 308,
+     "lines_removed": 77,
+     "bytes_added": 10164,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1753426207,
+     "language": "TypeScript",
+     "lines_added": 729,
+     "lines_removed": 182,
+     "bytes_added": 24057,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1753336603,
+     "language": "TypeScript",
+     "lines_added": 857,
+     "lines_removed": 214,
+     "bytes_added": 28281,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1753074825,
+     "language": "TypeScript",
+     "lines_added": 445,
+     "lines_removed": 111,
+     "bytes_added": 14685,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1752984942,
+     "language": "TypeScript",
+     "lines_added": 296,
+     "lines_removed": 74,
+     "bytes_added": 9768,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1752900444,
+     "language": "TypeScript",
+     "lines_added": 675,
+     "lines_removed": 168,
+     "bytes_added": 22275,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1752651454,
+     "language": "TypeScript",
+     "lines_added": 435,
+     "lines_removed": 108,
+     "bytes_added": 14355,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1752551130,
+     "language": "TypeScript",
+     "lines_added": 735,
+     "lines_removed": 183,
+     "bytes_added": 24255,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1752390347,
+     "language": "TypeScript",
+     "lines_added": 373,
+     "lines_removed": 93,
+     "bytes_added": 12309,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1752212711,
+     "language": "TypeScript",
+     "lines_added": 451,
+     "lines_removed": 112,
+     "bytes_added": 14883,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1751952059,
+     "language": "TypeScript",
+     "lines_added": 717,
+     "lines_removed": 179,
+     "bytes_added": 23661,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1751860777,
+     "language": "TypeScript",
+     "lines_added": 894,
+     "lines_removed": 223,
+     "bytes_added": 29502,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1751788859,
+     "language": "TypeScript",
+     "lines_added": 291,
+     "lines_removed": 72,
+     "bytes_added": 9603,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1751703440,
+     "language": "TypeScript",
+     "lines_added": 480,
+     "lines_removed": 120,
+     "bytes_added": 15840,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1751355064,
+     "language": "TypeScript",
+     "lines_added": 462,
+     "lines_removed": 115,
+     "bytes_added": 15246,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1751176194,
+     "language": "TypeScript",
+     "lines_added": 587,
+     "lines_removed": 146,
+     "bytes_added": 19371,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1750736880,
+     "language": "TypeScript",
+     "lines_added": 514,
+     "lines_removed": 128,
+     "bytes_added": 16962,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1750577290,
+     "language": "TypeScript",
+     "lines_added": 554,
+     "lines_removed": 138,
+     "bytes_added": 18282,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1750474516,
+     "language": "TypeScript",
+     "lines_added": 372,
+     "lines_removed": 93,
+     "bytes_added": 12276,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1750303529,
+     "language": "TypeScript",
+     "lines_added": 2489,
+     "lines_removed": 622,
+     "bytes_added": 82137,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1759989405,
+     "language": "Markdown",
+     "lines_added": 394,
+     "lines_removed": 98,
+     "bytes_added": 13002,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1759909824,
+     "language": "Markdown",
+     "lines_added": 446,
+     "lines_removed": 111,
+     "bytes_added": 14718,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1759553770,
+     "language": "Markdown",
+     "lines_added": 277,
+     "lines_removed": 69,
+     "bytes_added": 9141,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1759476101,
+     "language": "Markdown",
+     "lines_added": 280,
+     "lines_removed": 70,
+     "bytes_added": 9240,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1758873280,
+     "language": "Markdown",
+     "lines_added": 558,
+     "lines_removed": 139,
+     "bytes_added": 18414,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1758440565,
+     "language": "Markdown",
+     "lines_added": 600,
+     "lines_removed": 150,
+     "bytes_added": 19800,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1758165511,
+     "language": "Markdown",
+     "lines_added": 597,
+     "lines_removed": 149,
+     "bytes_added": 19701,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1758092431,
+     "language": "Markdown",
+     "lines_added": 458,
+     "lines_removed": 114,
+     "bytes_added": 15114,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1757742795,
+     "language": "Markdown",
+     "lines_added": 429,
+     "lines_removed": 107,
+     "bytes_added": 14157,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1757309007,
+     "language": "Markdown",
+     "lines_added": 613,
+     "lines_removed": 153,
+     "bytes_added": 20229,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1757147703,
+     "language": "Markdown",
+     "lines_added": 439,
+     "lines_removed": 109,
+     "bytes_added": 14487,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1757046864,
+     "language": "Markdown",
+     "lines_added": 537,
+     "lines_removed": 134,
+     "bytes_added": 17721,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1756868631,
+     "language": "Markdown",
+     "lines_added": 532,
+     "lines_removed": 133,
+     "bytes_added": 17556,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1756538095,
+     "language": "Markdown",
+     "lines_added": 616,
+     "lines_removed": 154,
+     "bytes_added": 20328,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1756448070,
+     "language": "Markdown",
+     "lines_added": 560,
+     "lines_removed": 140,
+     "bytes_added": 18480,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1756098039,
+     "language": "Markdown",
+     "lines_added": 442,
+     "lines_removed": 110,
+     "bytes_added": 14586,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1756010071,
+     "language": "Markdown",
+     "lines_added": 342,
+     "lines_removed": 85,
+     "bytes_added": 11286,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1755067148,
+     "language": "Markdown",
+     "lines_added": 435,
+     "lines_removed": 108,
+     "bytes_added": 14355,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1754023758,
+     "language": "Markdown",
+     "lines_added": 561,
+     "lines_removed": 140,
+     "bytes_added": 18513,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1753586617,
+     "language": "Markdown",
+     "lines_added": 583,
+     "lines_removed": 145,
+     "bytes_added": 19239,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1753512289,
+     "language": "Markdown",
+     "lines_added": 279,
+     "lines_removed": 69,
+     "bytes_added": 9207,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1752982004,
+     "language": "Markdown",
+     "lines_added": 558,
+     "lines_removed": 139,
+     "bytes_added": 18414,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1752910695,
+     "language": "Markdown",
+     "lines_added": 296,
+     "lines_removed": 74,
+     "bytes_added": 9768,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1752644210,
+     "language": "Markdown",
+     "lines_added": 463,
+     "lines_removed": 115,
+     "bytes_added": 15279,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1752569280,
+     "language": "Markdown",
+     "lines_added": 622,
+     "lines_removed": 155,
+     "bytes_added": 20526,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1752377637,
+     "language": "Markdown",
+     "lines_added": 155,
+     "lines_removed": 38,
+     "bytes_added": 5115,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1751954068,
+     "language": "Markdown",
+     "lines_added": 1,
+     "lines_removed": 0,
+     "bytes_added": 33,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1751872536,
+     "language": "Markdown",
+     "lines_added": 1,
+     "lines_removed": 0,
+     "bytes_added": 33,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1751771635,
+     "language": "Markdown",
+     "lines_added": 1,
+     "lines_removed": 0,
+     "bytes_added": 33,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1751690010,
+     "language": "Markdown",
+     "lines_added": 1,
+     "lines_removed": 0,
+     "bytes_added": 33,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1750479938,
+     "language": "Markdown",
+     "lines_added": 1,
+     "lines_removed": 0,
+     "bytes_added": 33,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1759988430,
+     "language": "Rust",
+     "lines_added": 367,
+     "lines_removed": 91,
+     "bytes_added": 12111,
+     "event_type": "write"
+    },
+    {
+     "ts": 1759821146,
+     "language": "Rust",
+     "lines_added": 581,
+     "lines_removed": 145,
+     "bytes_added": 19173,
+     "event_type": "write"
+    },
+    {
+     "ts": 1759724615,
+     "language": "Rust",
+     "lines_added": 501,
+     "lines_removed": 125,
+     "bytes_added": 16533,
+     "event_type": "write"
+    },
+    {
+     "ts": 1759474669,
+     "language": "Rust",
+     "lines_added": 472,
+     "lines_removed": 118,
+     "bytes_added": 15576,
+     "event_type": "write"
+    },
+    {
+     "ts": 1758603166,
+     "language": "Rust",
+     "lines_added": 252,
+     "lines_removed": 63,
+     "bytes_added": 8316,
+     "event_type": "write"
+    },
+    {
+     "ts": 1758428460,
+     "language": "Rust",
+     "lines_added": 488,
+     "lines_removed": 122,
+     "bytes_added": 16104,
+     "event_type": "write"
+    },
+    {
+     "ts": 1757567473,
+     "language": "Rust",
+     "lines_added": 362,
+     "lines_removed": 90,
+     "bytes_added": 11946,
+     "event_type": "write"
+    },
+    {
+     "ts": 1757128565,
+     "language": "Rust",
+     "lines_added": 273,
+     "lines_removed": 68,
+     "bytes_added": 9009,
+     "event_type": "write"
+    },
+    {
+     "ts": 1757043070,
+     "language": "Rust",
+     "lines_added": 234,
+     "lines_removed": 58,
+     "bytes_added": 7722,
+     "event_type": "write"
+    },
+    {
+     "ts": 1755918056,
+     "language": "Rust",
+     "lines_added": 187,
+     "lines_removed": 46,
+     "bytes_added": 6171,
+     "event_type": "write"
+    },
+    {
+     "ts": 1755838819,
+     "language": "Rust",
+     "lines_added": 445,
+     "lines_removed": 111,
+     "bytes_added": 14685,
+     "event_type": "write"
+    },
+    {
+     "ts": 1755487998,
+     "language": "Rust",
+     "lines_added": 575,
+     "lines_removed": 143,
+     "bytes_added": 18975,
+     "event_type": "write"
+    },
+    {
+     "ts": 1755333250,
+     "language": "Rust",
+     "lines_added": 243,
+     "lines_removed": 60,
+     "bytes_added": 8019,
+     "event_type": "write"
+    },
+    {
+     "ts": 1755073237,
+     "language": "Rust",
+     "lines_added": 496,
+     "lines_removed": 124,
+     "bytes_added": 16368,
+     "event_type": "write"
+    },
+    {
+     "ts": 1753930422,
+     "language": "Rust",
+     "lines_added": 575,
+     "lines_removed": 143,
+     "bytes_added": 18975,
+     "event_type": "write"
+    },
+    {
+     "ts": 1753413881,
+     "language": "Rust",
+     "lines_added": 235,
+     "lines_removed": 58,
+     "bytes_added": 7755,
+     "event_type": "write"
+    },
+    {
+     "ts": 1752652779,
+     "language": "Rust",
+     "lines_added": 341,
+     "lines_removed": 85,
+     "bytes_added": 11253,
+     "event_type": "write"
+    },
+    {
+     "ts": 1751871940,
+     "language": "Rust",
+     "lines_added": 490,
+     "lines_removed": 122,
+     "bytes_added": 16170,
+     "event_type": "write"
+    },
+    {
+     "ts": 1751697969,
+     "language": "Rust",
+     "lines_added": 333,
+     "lines_removed": 83,
+     "bytes_added": 10989,
+     "event_type": "write"
+    },
+    {
+     "ts": 1750747982,
+     "language": "Rust",
+     "lines_added": 455,
+     "lines_removed": 113,
+     "bytes_added": 15015,
+     "event_type": "write"
+    },
+    {
+     "ts": 1750317635,
+     "language": "Rust",
+     "lines_added": 108,
+     "lines_removed": 27,
+     "bytes_added": 3564,
+     "event_type": "write"
+    },
+    {
+     "ts": 1759301432,
+     "language": "SQL",
+     "lines_added": 294,
+     "lines_removed": 73,
+     "bytes_added": 9702,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1758523964,
+     "language": "SQL",
+     "lines_added": 528,
+     "lines_removed": 132,
+     "bytes_added": 17424,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1758082022,
+     "language": "SQL",
+     "lines_added": 571,
+     "lines_removed": 142,
+     "bytes_added": 18843,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1757565381,
+     "language": "SQL",
+     "lines_added": 473,
+     "lines_removed": 118,
+     "bytes_added": 15609,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1757231032,
+     "language": "SQL",
+     "lines_added": 365,
+     "lines_removed": 91,
+     "bytes_added": 12045,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1757043652,
+     "language": "SQL",
+     "lines_added": 344,
+     "lines_removed": 86,
+     "bytes_added": 11352,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1756538259,
+     "language": "SQL",
+     "lines_added": 358,
+     "lines_removed": 89,
+     "bytes_added": 11814,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1756448553,
+     "language": "SQL",
+     "lines_added": 239,
+     "lines_removed": 59,
+     "bytes_added": 7887,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1755500313,
+     "language": "SQL",
+     "lines_added": 430,
+     "lines_removed": 107,
+     "bytes_added": 14190,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1752655912,
+     "language": "SQL",
+     "lines_added": 418,
+     "lines_removed": 104,
+     "bytes_added": 13794,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1751864902,
+     "language": "SQL",
+     "lines_added": 1,
+     "lines_removed": 0,
+     "bytes_added": 33,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1759391877,
+     "language": "Shell",
+     "lines_added": 274,
+     "lines_removed": 68,
+     "bytes_added": 9042,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1759038903,
+     "language": "Shell",
+     "lines_added": 430,
+     "lines_removed": 107,
+     "bytes_added": 14190,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1758786831,
+     "language": "Shell",
+     "lines_added": 508,
+     "lines_removed": 127,
+     "bytes_added": 16764,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1755500363,
+     "language": "Shell",
+     "lines_added": 318,
+     "lines_removed": 79,
+     "bytes_added": 10494,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1759733939,
+     "language": "YAML",
+     "lines_added": 399,
+     "lines_removed": 99,
+     "bytes_added": 13167,
+     "event_type": "write"
+    },
+    {
+     "ts": 1756436721,
+     "language": "YAML",
+     "lines_added": 437,
+     "lines_removed": 109,
+     "bytes_added": 14421,
+     "event_type": "write"
+    },
+    {
+     "ts": 1753590926,
+     "language": "YAML",
+     "lines_added": 66,
+     "lines_removed": 16,
+     "bytes_added": 2178,
+     "event_type": "write"
+    },
+    {
+     "ts": 1757141670,
+     "language": "Zig",
+     "lines_added": 256,
+     "lines_removed": 64,
+     "bytes_added": 8448,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1755748035,
+     "language": "Zig",
+     "lines_added": 177,
+     "lines_removed": 44,
+     "bytes_added": 5841,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1759820294,
+     "language": "C++",
+     "lines_added": 120,
+     "lines_removed": 30,
+     "bytes_added": 3960,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1752999102,
+     "language": "Java",
+     "lines_added": 12,
+     "lines_removed": 3,
+     "bytes_added": 396,
+     "event_type": "write"
+    },
+    {
+     "ts": 1742705168,
+     "language": "Python",
+     "lines_added": 456,
+     "lines_removed": 114,
+     "bytes_added": 15048,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1741144122,
+     "language": "Python",
+     "lines_added": 274,
+     "lines_removed": 68,
+     "bytes_added": 9042,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1738046863,
+     "language": "Python",
+     "lines_added": 170,
+     "lines_removed": 42,
+     "bytes_added": 5610,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1759998200,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1759825400,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1759652600,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1759479800,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1759307000,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1758875000,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1758702200,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1758529400,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1758183800,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1757924600,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1757579000,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1757319800,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1757147000,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1756887800,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1756542200,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1756110200,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1755937400,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1755764600,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1755332600,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1755073400,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1754727800,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1754382200,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1754036600,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1753691000,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1753518200,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1753345400,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1752999800,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1752654200,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1752395000,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1751963000,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1751790200,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1751358200,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1750753400,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1750494200,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1759998200,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1759911800,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1759825400,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1759739000,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1759652600,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1759566200,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1759479800,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1759393400,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1759307000,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    }
+   ],
+   "repo_count": 37,
+   "updated_at": 1759992800
+  },
+  "git": {
+   "events": [
+    {
+     "ts": 1759910039,
+     "language": "Go",
+     "lines_added": 187,
+     "lines_removed": 46,
+     "bytes_added": 6171,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1759812741,
+     "language": "Go",
+     "lines_added": 375,
+     "lines_removed": 93,
+     "bytes_added": 12375,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1759649439,
+     "language": "Go",
+     "lines_added": 559,
+     "lines_removed": 139,
+     "bytes_added": 18447,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1759565142,
+     "language": "Go",
+     "lines_added": 187,
+     "lines_removed": 46,
+     "bytes_added": 6171,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1759479554,
+     "language": "Go",
+     "lines_added": 386,
+     "lines_removed": 96,
+     "bytes_added": 12738,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1758946439,
+     "language": "Go",
+     "lines_added": 575,
+     "lines_removed": 143,
+     "bytes_added": 18975,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1758866138,
+     "language": "Go",
+     "lines_added": 470,
+     "lines_removed": 117,
+     "bytes_added": 15510,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1758268353,
+     "language": "Go",
+     "lines_added": 579,
+     "lines_removed": 144,
+     "bytes_added": 19107,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1757144443,
+     "language": "Go",
+     "lines_added": 407,
+     "lines_removed": 101,
+     "bytes_added": 13431,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1757043510,
+     "language": "Go",
+     "lines_added": 219,
+     "lines_removed": 54,
+     "bytes_added": 7227,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1756454793,
+     "language": "Go",
+     "lines_added": 439,
+     "lines_removed": 109,
+     "bytes_added": 14487,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1754803470,
+     "language": "Go",
+     "lines_added": 213,
+     "lines_removed": 53,
+     "bytes_added": 7029,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1754642159,
+     "language": "Go",
+     "lines_added": 558,
+     "lines_removed": 139,
+     "bytes_added": 18414,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1752209076,
+     "language": "Go",
+     "lines_added": 56,
+     "lines_removed": 14,
+     "bytes_added": 1848,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1759901472,
+     "language": "TypeScript",
+     "lines_added": 284,
+     "lines_removed": 71,
+     "bytes_added": 9372,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1759470377,
+     "language": "TypeScript",
+     "lines_added": 519,
+     "lines_removed": 129,
+     "bytes_added": 17127,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1758946884,
+     "language": "TypeScript",
+     "lines_added": 572,
+     "lines_removed": 143,
+     "bytes_added": 18876,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1757043821,
+     "language": "TypeScript",
+     "lines_added": 536,
+     "lines_removed": 134,
+     "bytes_added": 17688,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1756447693,
+     "language": "TypeScript",
+     "lines_added": 424,
+     "lines_removed": 106,
+     "bytes_added": 13992,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1754804337,
+     "language": "TypeScript",
+     "lines_added": 351,
+     "lines_removed": 87,
+     "bytes_added": 11583,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1754639271,
+     "language": "TypeScript",
+     "lines_added": 333,
+     "lines_removed": 83,
+     "bytes_added": 10989,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1752215378,
+     "language": "TypeScript",
+     "lines_added": 1,
+     "lines_removed": 0,
+     "bytes_added": 33,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1757144234,
+     "language": "HTML",
+     "lines_added": 239,
+     "lines_removed": 59,
+     "bytes_added": 7887,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1757059248,
+     "language": "HTML",
+     "lines_added": 497,
+     "lines_removed": 124,
+     "bytes_added": 16401,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1754717659,
+     "language": "HTML",
+     "lines_added": 374,
+     "lines_removed": 93,
+     "bytes_added": 12342,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1758955752,
+     "language": "CSS",
+     "lines_added": 446,
+     "lines_removed": 111,
+     "bytes_added": 14718,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1754802953,
+     "language": "CSS",
+     "lines_added": 194,
+     "lines_removed": 48,
+     "bytes_added": 6402,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1756448823,
+     "language": "JSON",
+     "lines_added": 230,
+     "lines_removed": 57,
+     "bytes_added": 7590,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1759649413,
+     "language": "Markdown",
+     "lines_added": 95,
+     "lines_removed": 23,
+     "bytes_added": 3135,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1759807385,
+     "language": "Dockerfile",
+     "lines_added": 31,
+     "lines_removed": 7,
+     "bytes_added": 1023,
+     "event_type": "diff"
+    },
+    {
+     "ts": 1759912700,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1759826300,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1759653500,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1759567100,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1759480700,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1758962300,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1758875900,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1758271100,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1757147900,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1757061500,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1756456700,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1754815100,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1754728700,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1754642300,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    },
+    {
+     "ts": 1752223100,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 0,
+     "event_type": "commit"
+    }
+   ],
+   "repo_count": 12,
+   "updated_at": 1759740800
+  },
+  "empty": {
+   "events": [],
+   "repo_count": 0,
+   "updated_at": 0
+  },
+  "profile": {
+   "events": [
+    {
+     "ts": 1759740800,
+     "language": "Python",
+     "lines_added": 120,
+     "lines_removed": 0,
+     "bytes_added": 100,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1759740800,
+     "language": "TypeScript",
+     "lines_added": 80,
+     "lines_removed": 0,
+     "bytes_added": 100,
+     "event_type": "edit"
+    },
+    {
+     "ts": 1759740800,
+     "language": null,
+     "lines_added": 0,
+     "lines_removed": 0,
+     "bytes_added": 100,
+     "event_type": "commit"
+    }
+   ],
+   "repo_count": 40,
+   "updated_at": 1759998200,
+   "badges": [
+    {
+     "kind": "certification",
+     "label": "Azure AI Engineer"
+    },
+    {
+     "kind": "award",
+     "label": "Hackathon <winner> & co"
+    },
+    {
+     "kind": "badge",
+     "label": "Open source"
+    }
+   ],
+   "pins": [
+    {
+     "repo": "devcard",
+     "note": "Live coding-activity card",
+     "stars": 7
+    },
+    {
+     "repo": "a-much-longer-repository-name",
+     "note": "Notes \"quoted\" & escaped",
+     "stars": 7
+    }
+   ]
+  }
+ },
+ "variants": [
+  {
+   "fixture": "rich",
+   "layout": "full",
+   "theme": "default",
+   "lang": "en"
+  },
+  {
+   "fixture": "rich",
+   "layout": "full",
+   "theme": "default",
+   "lang": "pt"
+  },
+  {
+   "fixture": "rich",
+   "layout": "full",
+   "theme": "default",
+   "lang": "es"
+  },
+  {
+   "fixture": "rich",
+   "layout": "full",
+   "theme": "light",
+   "lang": "en"
+  },
+  {
+   "fixture": "rich",
+   "layout": "full",
+   "theme": "light",
+   "lang": "pt"
+  },
+  {
+   "fixture": "rich",
+   "layout": "full",
+   "theme": "light",
+   "lang": "es"
+  },
+  {
+   "fixture": "rich",
+   "layout": "full",
+   "theme": "dark",
+   "lang": "en"
+  },
+  {
+   "fixture": "rich",
+   "layout": "full",
+   "theme": "dark",
+   "lang": "pt"
+  },
+  {
+   "fixture": "rich",
+   "layout": "full",
+   "theme": "dark",
+   "lang": "es"
+  },
+  {
+   "fixture": "rich",
+   "layout": "full",
+   "theme": "default",
+   "lang": "en",
+   "langs": "all"
+  },
+  {
+   "fixture": "rich",
+   "layout": "wide",
+   "theme": "default",
+   "lang": "en"
+  },
+  {
+   "fixture": "rich",
+   "layout": "wide",
+   "theme": "default",
+   "lang": "pt"
+  },
+  {
+   "fixture": "rich",
+   "layout": "wide",
+   "theme": "default",
+   "lang": "es"
+  },
+  {
+   "fixture": "rich",
+   "layout": "wide",
+   "theme": "light",
+   "lang": "en"
+  },
+  {
+   "fixture": "rich",
+   "layout": "wide",
+   "theme": "light",
+   "lang": "pt"
+  },
+  {
+   "fixture": "rich",
+   "layout": "wide",
+   "theme": "light",
+   "lang": "es"
+  },
+  {
+   "fixture": "rich",
+   "layout": "wide",
+   "theme": "dark",
+   "lang": "en"
+  },
+  {
+   "fixture": "rich",
+   "layout": "wide",
+   "theme": "dark",
+   "lang": "pt"
+  },
+  {
+   "fixture": "rich",
+   "layout": "wide",
+   "theme": "dark",
+   "lang": "es"
+  },
+  {
+   "fixture": "rich",
+   "layout": "wide",
+   "theme": "default",
+   "lang": "en",
+   "langs": "all"
+  },
+  {
+   "fixture": "rich",
+   "layout": "banner",
+   "theme": "default",
+   "lang": "en"
+  },
+  {
+   "fixture": "rich",
+   "layout": "banner",
+   "theme": "default",
+   "lang": "pt"
+  },
+  {
+   "fixture": "git",
+   "layout": "banner",
+   "theme": "dark",
+   "lang": "en"
+  },
+  {
+   "fixture": "rich",
+   "layout": "half",
+   "theme": "default",
+   "lang": "en"
+  },
+  {
+   "fixture": "rich",
+   "layout": "half",
+   "theme": "default",
+   "lang": "pt"
+  },
+  {
+   "fixture": "git",
+   "layout": "half",
+   "theme": "dark",
+   "lang": "en"
+  },
+  {
+   "fixture": "rich",
+   "layout": "vertical",
+   "theme": "default",
+   "lang": "en"
+  },
+  {
+   "fixture": "rich",
+   "layout": "vertical",
+   "theme": "default",
+   "lang": "pt"
+  },
+  {
+   "fixture": "git",
+   "layout": "vertical",
+   "theme": "dark",
+   "lang": "en"
+  },
+  {
+   "fixture": "seed",
+   "layout": "full",
+   "theme": "default",
+   "lang": "en"
+  },
+  {
+   "fixture": "seed",
+   "layout": "full",
+   "theme": "dark",
+   "lang": "es"
+  },
+  {
+   "fixture": "seed",
+   "layout": "wide",
+   "theme": "default",
+   "lang": "en"
+  },
+  {
+   "fixture": "seed",
+   "layout": "wide",
+   "theme": "dark",
+   "lang": "es"
+  },
+  {
+   "fixture": "git",
+   "layout": "full",
+   "theme": "default",
+   "lang": "en"
+  },
+  {
+   "fixture": "git",
+   "layout": "full",
+   "theme": "dark",
+   "lang": "es"
+  },
+  {
+   "fixture": "git",
+   "layout": "wide",
+   "theme": "default",
+   "lang": "en"
+  },
+  {
+   "fixture": "git",
+   "layout": "wide",
+   "theme": "dark",
+   "lang": "es"
+  },
+  {
+   "fixture": "empty",
+   "layout": "full",
+   "theme": "default",
+   "lang": "en"
+  },
+  {
+   "fixture": "empty",
+   "layout": "full",
+   "theme": "dark",
+   "lang": "es"
+  },
+  {
+   "fixture": "empty",
+   "layout": "wide",
+   "theme": "default",
+   "lang": "en"
+  },
+  {
+   "fixture": "empty",
+   "layout": "wide",
+   "theme": "dark",
+   "lang": "es"
+  },
+  {
+   "fixture": "profile",
+   "layout": "full",
+   "theme": "default",
+   "lang": "en"
+  },
+  {
+   "fixture": "profile",
+   "layout": "full",
+   "theme": "dark",
+   "lang": "es"
+  },
+  {
+   "fixture": "profile",
+   "layout": "wide",
+   "theme": "default",
+   "lang": "en"
+  },
+  {
+   "fixture": "profile",
+   "layout": "wide",
+   "theme": "dark",
+   "lang": "es"
+  },
+  {
+   "fixture": "empty",
+   "layout": "banner",
+   "theme": "default",
+   "lang": "en"
+  }
+ ]
+}
