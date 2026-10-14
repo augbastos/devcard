@@ -1,7 +1,16 @@
-import { env } from "cloudflare:test";
+import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
+import legacyRenderer from "./legacy-render";
 import schemaSql from "../schema.sql?raw";
 import { cacheKeyFor, LAYOUTS, STRINGS } from "../src/variants";
 import { THEMES } from "../src/themes";
+
+/** Exercise retained renderers without going through the retired public routes. */
+export async function renderLegacy(input: Request | string, init?: RequestInit): Promise<Response> {
+  const ctx = createExecutionContext();
+  const response = await legacyRenderer.fetch(new Request(input, init), env, ctx);
+  await waitOnExecutionContext(ctx);
+  return response;
+}
 
 // D1's `exec()` splits on newlines, so it cannot run the pretty-printed
 // schema.sql the docs tell people to apply. Rather than keep a second,

@@ -1,6 +1,6 @@
 import { SELF } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { resetDb, ev, ingestRequest } from "./helpers";
+import { resetDb, ev, ingestRequest, renderLegacy } from "./helpers";
 import { withOtherBucket, OTHER_LANGUAGE, NAMED_LANGUAGES } from "../src/queries";
 
 /** The real distribution from the deployed card: 18 languages, a long tail. */
@@ -75,7 +75,7 @@ describe("the card names every part of its language bar", () => {
   });
 
   const card = async (query = "") =>
-    (await SELF.fetch(`https://card.example/svg${query}`)).text();
+    (await renderLegacy(`https://card.example/svg${query}`)).text();
 
   it("shows an Other entry in the legend of the full layout", async () => {
     const svg = await card();
@@ -157,7 +157,7 @@ describe("?langs=all", () => {
   });
 
   const card = async (query = "") =>
-    (await SELF.fetch(`https://card.example/svg${query}`)).text();
+    (await renderLegacy(`https://card.example/svg${query}`)).text();
 
   it("names every language instead of collapsing the tail", async () => {
     const svg = await card("?langs=all");
@@ -206,7 +206,7 @@ describe("wide layout", () => {
   });
 
   const wide = async (query = "") =>
-    (await SELF.fetch(`https://card.example/svg?layout=wide${query}`)).text();
+    (await renderLegacy(`https://card.example/svg?layout=wide${query}`)).text();
 
   it("is 840 wide, so it fills a GitHub README column", async () => {
     const svg = await wide();
@@ -218,7 +218,7 @@ describe("wide layout", () => {
     // README column empty beside it. Height is allowed to grow a little —
     // the heatmap cells are bigger — as long as the card reads as wide.
     const w = await wide();
-    const f = await (await SELF.fetch("https://card.example/svg?layout=full")).text();
+    const f = await (await renderLegacy("https://card.example/svg?layout=full")).text();
     const ratio = (s: string) =>
       Number(/width="(\d+)"/.exec(s)![1]) / Number(/height="(\d+)"/.exec(s)![1]);
     expect(ratio(w)).toBeGreaterThan(1.7);
@@ -296,7 +296,7 @@ describe("wide layout", () => {
 
   it("gets its own cache entry, separate from full", async () => {
     const w = await wide();
-    const f = await (await SELF.fetch("https://card.example/svg?layout=full")).text();
+    const f = await (await renderLegacy("https://card.example/svg?layout=full")).text();
     expect(w).not.toBe(f);
   });
 });

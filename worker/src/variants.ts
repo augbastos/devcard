@@ -8,6 +8,9 @@
 
 import { Strings } from "./render";
 
+// Temporary redirects expire at the start of 2027-01-14 (UTC).
+export const RETIRE_AT = Date.parse("2027-01-14T00:00:00Z");
+
 export const STRINGS: Record<string, Strings> = {
   en: {
     lines: "lines written",
@@ -209,4 +212,3 @@ export function cacheKeyFor(
   }
   return new Request(key.toString(), { method: "GET" });
 }
-

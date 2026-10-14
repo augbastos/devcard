@@ -1,6 +1,6 @@
 import { SELF, env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { resetDb, ev, ingestRequest, purgeCardCache } from "./helpers";
+import { resetDb, ev, ingestRequest, purgeCardCache, renderLegacy } from "./helpers";
 
 const EN = { "Accept-Language": "en-US,en;q=0.9" };
 const EN_GB = { "Accept-Language": "en-GB,en;q=0.7" };
@@ -27,7 +27,7 @@ async function bumpLines(): Promise<void> {
 }
 
 async function body(query = "", headers: Record<string, string> = {}): Promise<string> {
-  const res = await SELF.fetch(`https://card.example/svg${query}`, { headers });
+  const res = await renderLegacy(`https://card.example/svg${query}`, { headers });
   expect(res.status).toBe(200);
   return res.text();
 }
@@ -151,13 +151,13 @@ describe("cache key", () => {
 
     it("still 404s an unknown user before consulting the cache", async () => {
       await body("", EN);
-      const res = await SELF.fetch("https://card.example/svg?user=someone-else", { headers: EN });
+      const res = await renderLegacy("https://card.example/svg?user=someone-else", { headers: EN });
       expect(res.status).toBe(404);
     });
   });
 
   it("keeps Vary: Accept-Language for caches downstream of the Worker", async () => {
-    const res = await SELF.fetch("https://card.example/svg", { headers: EN });
+    const res = await renderLegacy("https://card.example/svg", { headers: EN });
     expect(res.headers.get("Vary")).toBe("Accept-Language");
     expect(res.headers.get("Cache-Control")).toContain("s-maxage=300");
   });

@@ -1,7 +1,7 @@
 import { SELF, createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import worker from "../src/index";
-import { resetDb, ev, ingestRequest, TOKEN, WRONG_TOKEN } from "./helpers";
+import { resetDb, ev, ingestRequest, TOKEN, WRONG_TOKEN, renderLegacy } from "./helpers";
 
 async function seed(): Promise<void> {
   const res = await SELF.fetch(
@@ -18,14 +18,14 @@ async function seed(): Promise<void> {
   expect(res.status).toBe(200);
 }
 
-describe("/svg rendering", () => {
+describe("retained SVG rendering", () => {
   beforeEach(async () => {
     await resetDb();
     await seed();
   });
 
   it("renders a well-formed SVG for the default request", async () => {
-    const res = await SELF.fetch("https://card.example/svg");
+    const res = await renderLegacy("https://card.example/svg");
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("image/svg+xml");
     const body = await res.text();
@@ -35,12 +35,12 @@ describe("/svg rendering", () => {
   });
 
   it("404s a user that is not the configured owner", async () => {
-    const res = await SELF.fetch("https://card.example/svg?user=someone-else");
+    const res = await renderLegacy("https://card.example/svg?user=someone-else");
     expect(res.status).toBe(404);
   });
 
   it("forbids script and external loads when the SVG is opened as a document", async () => {
-    const res = await SELF.fetch("https://card.example/svg");
+    const res = await renderLegacy("https://card.example/svg");
     const csp = res.headers.get("Content-Security-Policy") ?? "";
     expect(csp).toContain("default-src 'none'");
     expect(csp).not.toContain("script-src");
@@ -49,7 +49,7 @@ describe("/svg rendering", () => {
   });
 
   it("answers HEAD with the real headers and no body", async () => {
-    const res = await SELF.fetch("https://card.example/svg", { method: "HEAD" });
+    const res = await renderLegacy("https://card.example/svg", { method: "HEAD" });
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("image/svg+xml");
     expect(await res.text()).toBe("");
@@ -63,7 +63,7 @@ describe("/svg rendering", () => {
 
     for (const value of hostile) {
       it(`falls back to the default theme for ?theme=${value || "(empty)"}`, async () => {
-        const res = await SELF.fetch(`https://card.example/svg?theme=${encodeURIComponent(value)}`);
+        const res = await renderLegacy(`https://card.example/svg?theme=${encodeURIComponent(value)}`);
         expect(res.status).toBe(200);
         const body = await res.text();
         // The default theme is the only one that emits a dark-mode block.
@@ -72,7 +72,7 @@ describe("/svg rendering", () => {
       });
 
       it(`falls back to English for ?lang=${value || "(empty)"}`, async () => {
-        const res = await SELF.fetch(`https://card.example/svg?lang=${encodeURIComponent(value)}`);
+        const res = await renderLegacy(`https://card.example/svg?lang=${encodeURIComponent(value)}`);
         expect(res.status).toBe(200);
         const body = await res.text();
         expect(body).toContain("lines written");
@@ -80,7 +80,7 @@ describe("/svg rendering", () => {
       });
 
       it(`falls back to the full layout for ?layout=${value || "(empty)"}`, async () => {
-        const res = await SELF.fetch(`https://card.example/svg?layout=${encodeURIComponent(value)}`);
+        const res = await renderLegacy(`https://card.example/svg?layout=${encodeURIComponent(value)}`);
         expect(res.status).toBe(200);
         const body = await res.text();
         expect(body).toContain('width="480"');
@@ -89,7 +89,7 @@ describe("/svg rendering", () => {
     }
 
     it("ignores a hostile Accept-Language and still renders English", async () => {
-      const res = await SELF.fetch("https://card.example/svg", {
+      const res = await renderLegacy("https://card.example/svg", {
         headers: { "Accept-Language": "constructor,__proto__;q=0.9,toString;q=0.8" },
       });
       expect(res.status).toBe(200);
@@ -101,8 +101,8 @@ describe("/svg rendering", () => {
 
   describe("themes and layouts", () => {
     it("serves each named theme with its own palette", async () => {
-      const terminal = await (await SELF.fetch("https://card.example/svg?theme=terminal")).text();
-      const cyberpunk = await (await SELF.fetch("https://card.example/svg?theme=cyberpunk")).text();
+      const terminal = await (await renderLegacy("https://card.example/svg?theme=terminal")).text();
+      const cyberpunk = await (await renderLegacy("https://card.example/svg?theme=cyberpunk")).text();
       expect(terminal).toContain("#39ff6a");
       expect(cyberpunk).toContain("#ece8ff");
       expect(terminal).not.toEqual(cyberpunk);
@@ -117,7 +117,7 @@ describe("/svg rendering", () => {
         ["vertical", 'width="280"'],
       ];
       for (const [layout, marker] of sizes) {
-        const body = await (await SELF.fetch(`https://card.example/svg?layout=${layout}`)).text();
+        const body = await (await renderLegacy(`https://card.example/svg?layout=${layout}`)).text();
         expect(body).toContain(marker);
       }
     });
@@ -136,7 +136,7 @@ describe("/svg rendering", () => {
         .bind('evil"repo', "<b>note</b>")
         .run();
 
-      const body = await (await SELF.fetch("https://card.example/svg?nocache=escape")).text();
+      const body = await (await renderLegacy("https://card.example/svg?nocache=escape")).text();
       expect(body).not.toContain("<script>");
       expect(body).toContain("&lt;script&gt;");
       // The repo name lands inside an href attribute too — a raw quote there
@@ -148,7 +148,7 @@ describe("/svg rendering", () => {
 
   describe("rollup-backed numbers", () => {
     it("reports the languages, totals and repo count that were ingested", async () => {
-      const body = await (await SELF.fetch("https://card.example/svg")).text();
+      const body = await (await renderLegacy("https://card.example/svg")).text();
       expect(body).toContain("200"); // 120 + 80 lines
       expect(body).toContain("Python");
       expect(body).toContain("TypeScript");
@@ -157,7 +157,7 @@ describe("/svg rendering", () => {
 
     it("renders an empty account without dividing by zero", async () => {
       await resetDb();
-      const res = await SELF.fetch("https://card.example/svg?nocache=empty");
+      const res = await renderLegacy("https://card.example/svg?nocache=empty");
       expect(res.status).toBe(200);
       const body = await res.text();
       expect(body).not.toContain("NaN");
@@ -166,8 +166,8 @@ describe("/svg rendering", () => {
   });
 
   it("rejects unknown paths", async () => {
-    expect((await SELF.fetch("https://card.example/")).status).toBe(404);
-    expect((await SELF.fetch("https://card.example/ingest")).status).toBe(404);
+    expect((await renderLegacy("https://card.example/")).status).toBe(404);
+    expect((await renderLegacy("https://card.example/ingest")).status).toBe(404);
   });
 });
 

@@ -2,8 +2,8 @@
 //
 // Each fixture in tests/golden/fixtures.json is a list of events. They go in
 // through the real /ingest — so the rollups the card reads are built by the
-// Worker's own code — and every listed variant is rendered through the real
-// /svg with the clock pinned. The Python suite renders the same fixtures from a
+// Worker's own code — and every listed variant uses the retained rendering
+// harness with the clock pinned. The Python suite renders the same fixtures from a
 // local SQLite and must produce the same files (tests/test_golden.py).
 //
 // Regenerate after an intentional renderer change with
@@ -13,7 +13,7 @@ import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
 import golden from "../../tests/golden/fixtures.json";
-import { resetDb, ingestRequest } from "./helpers";
+import { resetDb, ingestRequest, renderLegacy } from "./helpers";
 
 interface FixtureEvent {
   ts: number;
@@ -48,6 +48,7 @@ function goldenName(v: Variant): string {
 }
 
 async function call(request: Request): Promise<Response> {
+  if (request.method === "GET") return renderLegacy(request);
   const ctx = createExecutionContext();
   const res = await worker.fetch(request, env, ctx);
   await waitOnExecutionContext(ctx);

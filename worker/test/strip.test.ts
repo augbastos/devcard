@@ -5,7 +5,7 @@
 
 import { SELF } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { resetDb, ev, ingestRequest, purgeCardCache } from "./helpers";
+import { resetDb, ev, ingestRequest, purgeCardCache, renderLegacy } from "./helpers";
 import { stripLayout, MIN_SEG, W, INNER, PAD } from "../src/render-split";
 import { cacheKeyFor, capSide, partName, pieceWidth, segIndex } from "../src/variants";
 import { LanguageSlice } from "../src/queries";
@@ -148,7 +148,7 @@ describe("/embed", () => {
   });
 
   it("emits a body, two caps and one image per language", async () => {
-    const res = await SELF.fetch(`${BASE}/embed`);
+    const res = await renderLegacy(`${BASE}/embed`);
     expect(res.status).toBe(200);
     const tags = imgTags(await res.text());
     expect(tags).toHaveLength(1 + 2 + TAIL.length);
@@ -158,7 +158,7 @@ describe("/embed", () => {
   });
 
   it("puts no whitespace between the images", async () => {
-    const html = (await (await SELF.fetch(`${BASE}/embed`)).text()).trim();
+    const html = (await (await renderLegacy(`${BASE}/embed`)).text()).trim();
     // A newline between two inline images renders as a space, and a space in
     // the bar is a visible gap between two languages.
     expect(html).not.toMatch(/>\s+<img/);
@@ -166,7 +166,7 @@ describe("/embed", () => {
   });
 
   it("names every language and its share in a title", async () => {
-    const tags = imgTags(await (await SELF.fetch(`${BASE}/embed`)).text());
+    const tags = imgTags(await (await renderLegacy(`${BASE}/embed`)).text());
     const titles = tags.map((t) => attr(t, "title")).filter(Boolean) as string[];
     expect(titles).toHaveLength(TAIL.length);
     expect(titles[0]).toMatch(/^Python \d+\.\d%$/);
@@ -177,12 +177,12 @@ describe("/embed", () => {
   it("stacks every piece with align=top", async () => {
     // align=left would stack without a seam too, but GitHub's CSS gives
     // img[align=left] a 20px right padding, which blows the bar apart.
-    const tags = imgTags(await (await SELF.fetch(`${BASE}/embed`)).text());
+    const tags = imgTags(await (await renderLegacy(`${BASE}/embed`)).text());
     expect(tags.every((t) => attr(t, "align") === "top")).toBe(true);
   });
 
   it("emits widths that sum to the full column", async () => {
-    const tags = imgTags(await (await SELF.fetch(`${BASE}/embed`)).text());
+    const tags = imgTags(await (await renderLegacy(`${BASE}/embed`)).text());
     const total = tags
       .slice(1)
       .map((t) => Math.round(Number((attr(t, "width") ?? "0").replace("%", "")) * 1e4))
@@ -198,7 +198,7 @@ describe("/embed", () => {
     // live data, and after a week of new lines every slice rendered at its own
     // height — the bar broke into steps. The block is generated, then the mix
     // shifts hard, then the same markup is rendered again.
-    const tags = imgTags(await (await SELF.fetch(`${BASE}/embed`)).text()).slice(1);
+    const tags = imgTags(await (await renderLegacy(`${BASE}/embed`)).text()).slice(1);
     const drift = [ev({ id: 900, language: "Markdown", lines_added: 20000 }), ev({ id: 901, language: "Rust", lines_added: 9000 })];
     expect((await SELF.fetch(ingestRequest({ events: drift, source_id: "driftsource" }))).status).toBe(200);
     await purgeCardCache();
@@ -210,7 +210,7 @@ describe("/embed", () => {
       for (const tag of tags) {
         const src = (attr(tag, "src") ?? "").replaceAll("&amp;", "&");
         keys.push(src);
-        const svg = await (await SELF.fetch(src)).text();
+        const svg = await (await renderLegacy(src)).text();
         const w = Number(svg.match(/<svg[^>]*width="([\d.]+)"/)?.[1]);
         const h = Number(svg.match(/<svg[^>]*height="([\d.]+)"/)?.[1]);
         const pct = Number((attr(tag, "width") ?? "0").replace("%", ""));
@@ -225,7 +225,7 @@ describe("/embed", () => {
   });
 
   it("carries the whole breakdown in the body's alt text", async () => {
-    const tags = imgTags(await (await SELF.fetch(`${BASE}/embed`)).text());
+    const tags = imgTags(await (await renderLegacy(`${BASE}/embed`)).text());
     const alt = attr(tags[0], "alt") ?? "";
     // The slices are decorative to a screen reader; the body says it all once.
     expect(alt).toContain("Python");
@@ -234,7 +234,7 @@ describe("/embed", () => {
   });
 
   it("404s a user that is not the configured owner", async () => {
-    expect((await SELF.fetch(`${BASE}/embed?user=someone-else`)).status).toBe(404);
+    expect((await renderLegacy(`${BASE}/embed?user=someone-else`)).status).toBe(404);
   });
 });
 
@@ -245,7 +245,7 @@ describe("/svg?part=", () => {
   });
 
   const get = async (q: string) => {
-    const res = await SELF.fetch(`${BASE}/svg?layout=wide&${q}`);
+    const res = await renderLegacy(`${BASE}/svg?layout=wide&${q}`);
     expect(res.status).toBe(200);
     return res.text();
   };
@@ -309,7 +309,7 @@ describe("/svg?part=", () => {
   });
 
   it("ignores part on a layout that is not cut into pieces", async () => {
-    const res = await SELF.fetch(`${BASE}/svg?layout=full&part=seg&i=0`);
+    const res = await renderLegacy(`${BASE}/svg?layout=full&part=seg&i=0`);
     expect(res.status).toBe(200);
     const body = await res.text();
     expect(body).toContain("lines written");
