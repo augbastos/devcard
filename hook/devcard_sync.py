@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Background sync for devcard — drains unsynced events to the Worker.
+"""Background sync for devcard — drains unsynced events to the Worker, or publishes.
 
 Spawned detached by devcard_capture.py (never blocks a Claude Code session).
 Safe to run concurrently: mark_synced only flips rows this process sent, and
@@ -25,6 +25,8 @@ def drain():
             lib.sync_pending(conn, max_batches=40, timeout=10)
         finally:
             conn.close()
+        # Serverless installs publish the card from here instead; debounced.
+        lib.auto_publish()
     except Exception as exc:
         lib.log_error(f"sync failed: {exc}")
 

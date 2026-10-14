@@ -1,5 +1,9 @@
 # Manual setup
 
+> **Legacy.** This page sets up the Cloudflare Worker. The recommended install is now the
+> [serverless card](serverless.md): `pipx install git+https://github.com/augbastos/devcard`
+> then `devcard init`. The Worker stays in `worker/` until the existing card is migrated.
+
 `python install.py` does all of this for you. These are the same steps by hand,
 for when you want to see each one. Most of the installer's wall time is `npm ci`
 and the first Cloudflare deploy.

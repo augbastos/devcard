@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="152" viewBox="0 0 480 152" role="img" aria-label="devcard devcard-test">
+  <style>.bg{fill:#11131a}.brd{stroke:#262b3a}.txt{fill:#eef0f5}.mut{fill:#9098ab}.faint{fill:#5c6478}.track{fill:#1c2029}.sep{fill:#11131a}.pill{fill:#191d27;stroke:#262b3a}.pill-sp{fill:#2b1922;stroke:#7a3349}.heart{fill:#f2789a}.link{fill:#6cb6ff}.avbrd{stroke:#262b3a}.accent{fill:#ff9d4d}.live{fill:#3fd67a}.tipbg{fill:#191d27;stroke:#262b3a}.tiptx{fill:#eef0f5}.heat0{fill:#171c22}.heat1{fill:#0f3d29}.heat2{fill:#0e6b3a}.heat3{fill:#22a355}.heat4{fill:#52e08a}.hit{fill:transparent;pointer-events:all}.tip{opacity:0;pointer-events:none;transition:opacity .12s ease-out}.hit:hover+.tip{opacity:1}</style>
+  <rect class="bg brd" x="0.5" y="0.5" width="479" height="151" rx="12" stroke-width="1"/>
+  <clipPath id="avh"><circle cx="35" cy="30" r="15"/></clipPath>
+  <image href="data:image/png;base64,UE5HREFUQQ==" x="20" y="15" width="30" height="30" clip-path="url(#avh)" preserveAspectRatio="xMidYMid slice"/>
+  <circle class="avbrd" cx="35" cy="30" r="15" fill="none" stroke-width="1.2"/>
+  <text class="txt" x="60" y="27" font-family="-apple-system,'Segoe UI',Roboto,'Helvetica Neue',sans-serif" font-size="13.5" font-weight="700">devcard</text>
+  <text class="mut" x="60" y="41" font-family="ui-monospace,SFMono-Regular,Consolas,monospace" font-size="11">@devcard-test</text>
+  <a href="https://github.com/devcard-test?tab=repositories" target="_blank">
+    <text class="link" x="460" y="31" font-family="ui-monospace,SFMono-Regular,Consolas,monospace" font-size="11.5" text-anchor="end">12 repos →</text>
+  </a>
+  <text class="txt" x="20" y="86" font-family="ui-monospace,SFMono-Regular,Consolas,monospace" font-size="24" font-weight="700">10,336<tspan class="mut" font-family="-apple-system,'Segoe UI',Roboto,'Helvetica Neue',sans-serif" font-size="11.5" font-weight="400"> lines written</tspan></text>
+  <clipPath id="minibar"><rect x="20" y="100" width="440" height="10" rx="5"/></clipPath><rect class="track" x="20" y="100" width="440" height="10" rx="5"/><g clip-path="url(#minibar)"><rect x="20.00" y="100" width="221.79" height="10" fill="#00add8"><title>Go</title></rect><rect x="241.79" y="100" width="128.56" height="10" fill="#3178c6"><title>TypeScript</title></rect><rect x="370.35" y="100" width="47.25" height="10" fill="#e34c26"><title>HTML</title></rect><rect x="417.60" y="100" width="27.24" height="10" fill="#563d7c"><title>CSS</title></rect><rect x="444.85" y="100" width="9.79" height="10" fill="#292929"><title>JSON</title></rect><rect x="454.64" y="100" width="4.04" height="10" fill="#083fa1"><title>Markdown</title></rect><rect x="458.68" y="100" width="1.32" height="10" fill="#8b93a3"><title>Dockerfile</title></rect></g>
+  <text x="20" y="134" font-size="11.5"><tspan class="txt" font-family="ui-monospace,SFMono-Regular,Consolas,monospace" font-weight="700">15</tspan><tspan class="mut" font-family="-apple-system,'Segoe UI',Roboto,'Helvetica Neue',sans-serif"> commits</tspan></text>
+  <path class="mut" d="M0.2,-7 C2.8,-4 4.6,-1.6 4.6,0.9 A4.7,4.7 0 0 1 -4.6,0.9 C-4.6,-0.9 -3.6,-2.4 -2.4,-3.7 C-2.1,-2.7 -1.5,-2 -0.6,-1.5 C-1,-3.4 -0.7,-5.2 0.2,-7 Z" transform="translate(409,129) scale(0.75)"/>
+  <text x="460" y="134" text-anchor="end" font-size="11.5"><tspan class="txt" font-family="ui-monospace,SFMono-Regular,Consolas,monospace" font-weight="700">2</tspan><tspan class="mut" font-family="-apple-system,'Segoe UI',Roboto,'Helvetica Neue',sans-serif"> day streak</tspan></text>
+</svg>

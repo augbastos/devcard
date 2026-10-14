@@ -15,6 +15,29 @@ What "public API" means for devcard, since it is not a library:
 
 ## [Unreleased]
 
+### Added — the serverless card (M1)
+
+- **`pipx install git+https://github.com/augbastos/devcard`, then `devcard init`.**
+  No Cloudflare account, no Worker, no token, no Node: the card is rendered on
+  your machine and committed to the orphan branch `devcard-data` of a public
+  repository you choose. See [the serverless card](docs/serverless.md).
+- `devcard render` writes `card.svg` and `card-dark.svg` locally;
+  `devcard publish` publishes, at most once per 15 minutes unless `--force`,
+  and not at all when nothing changed. The capture hooks call it on their own.
+- Several machines: each publishes only its own `machines/<id>.json` and the
+  card sums them (the repository count is the maximum, not the sum).
+- The renderer and the rollups are ported to Python (`devcard/`) and held byte
+  for byte to 46 golden SVGs rendered by the Worker (`tests/golden/`).
+
+### Changed
+
+- The Cloudflare Worker (`worker/`, `install.py`) is now the **legacy** path. It
+  keeps working, unchanged, until the existing card is migrated.
+- `register_claude_hook` moved from `install.py` to `hook/install_claude_hook.py`
+  so both installers share it. `install.py` re-exports it.
+- On a machine set up with `devcard init`, a missing Worker URL is no longer
+  logged as an error once an hour.
+
 ### Breaking
 
 - **`setup.py` is now `install.py`.** It never was a setuptools script, and the

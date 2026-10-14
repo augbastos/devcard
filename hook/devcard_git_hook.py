@@ -177,6 +177,7 @@ def main():
             lib.sync_pending(conn)
         finally:
             conn.close()
+        lib.auto_publish()
     except Exception as exc:
         lib.log_error(f"git hook failed: {exc}")
 

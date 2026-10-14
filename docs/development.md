@@ -4,6 +4,7 @@
 
 ```bash
 python -m unittest discover -s hook -p "test_*.py"    # hook, git integration, installer
+python -m unittest discover -s tests -t .              # devcard package: renderer, publish, init
 pipx run ruff==0.16.7 check .                          # Python lint (rules in ruff.toml)
 
 cd worker
@@ -12,7 +13,28 @@ npm run typecheck                                      # src and test
 npm test                                               # Worker, in workerd + local D1
 ```
 
-The Python side is standard library only, so there is nothing to install for it.
+The Python side is standard library only, so there is nothing to install for it
+(on Windows, `pip install tzdata` for the tests that render in a fixed timezone).
+`python -m devcard ...` runs the command line from a checkout.
+
+## Golden files
+
+`tests/golden/` holds 46 SVGs rendered by the legacy Worker's TypeScript renderer,
+and `tests/golden/fixtures.json` the events they were rendered from.
+`worker/test/golden.test.ts` sends those events through the Worker's real
+`/ingest` and renders every listed variant through `/svg` with the clock pinned;
+`tests/test_golden.py` loads the same events into a real hook database and
+renders them with `devcard/`. Both compare against the same files (the Python
+side normalises whitespace; today the outputs are byte-identical).
+
+So a change to either renderer fails a suite until the other matches or the files
+are regenerated on purpose:
+
+```bash
+cd worker && npx vitest run test/golden.test.ts -u    # rewrite tests/golden/ from the Worker
+```
+
+Commit the regenerated files together with the matching change in `devcard/`.
 
 The Worker suite runs inside workerd against a real local D1 through
 [`@cloudflare/vitest-plugin`](https://developers.cloudflare.com/workers/testing/vitest-integration/),
@@ -30,15 +52,17 @@ against a fake Node/npm/Wrangler, which is how its ordering (every check before
 any change, the Worker secret before its local copy) and its re-run path are
 tested without an account.
 
-Supported versions are defined once each: `MIN_PYTHON` in `install.py` and
-`engines.node` in `worker/package.json`. A test fails if CI's matrix or the
-README stops matching them.
+Supported versions are defined once each: `MIN_PYTHON` in `install.py` (mirrored
+by `devcard/cli.py` and `requires-python` in `pyproject.toml`) and `engines.node`
+in `worker/package.json`. A test fails if CI's matrix, the README or those
+mirrors stop matching them.
 
 ## What CI checks
 
 | Workflow | Job | Why it exists |
 |---|---|---|
-| `ci` | `hook` | The hook and installer suites on Ubuntu **and Windows**, Python 3.11 and 3.14. Windows differs for real: process detaching, drive-letter paths, ACLs instead of mode bits. |
+| `ci` | `hook` | The hook, installer and `devcard` package suites on Ubuntu **and Windows**, Python 3.11 and 3.14. Windows differs for real: process detaching, drive-letter paths, ACLs instead of mode bits. |
+| `ci` | `package` | `pipx install .`, then `devcard --version`, a render, and an import of every hook module the way the hooks run (`python -S`). |
 | `ci` | `python lint` | Ruff's correctness rules and bugbear. |
 | `ci` | `worker` | `npm ci`, typecheck, the workerd suite, and a `wrangler deploy --dry-run` bundle, on Node 22 and 24. |
 | `ci` | `ci-ok` | The single check the ruleset requires from this workflow, so a matrix change never leaves a required check that no job reports. |

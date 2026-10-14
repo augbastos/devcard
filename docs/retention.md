@@ -1,5 +1,9 @@
 # Event retention
 
+> **Legacy.** This page is about the Worker's D1 database. The recommended install is now the
+> [serverless card](serverless.md): `pipx install git+https://github.com/augbastos/devcard`
+> then `devcard init`. The Worker stays in `worker/` until the existing card is migrated.
+
 Short version: **nothing is deleted, on purpose.** This page gives the capacity
 reasoning behind that, a way to measure your own installation, and the trigger
 that should change the decision.

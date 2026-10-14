@@ -5,7 +5,61 @@ your machine. It is not *activity-private* — publishing your activity is what 
 stats card is for — so this page is precise about which activity leaves, and
 what a visitor can read from the card.
 
-## What leaves your machine
+## The serverless card: what is published
+
+`devcard publish` pushes three kinds of file to the `devcard-data` branch of the
+repository you chose — a **public** repository, so everything below is readable
+by anyone. Each publish replaces the branch with a new single commit; the
+replaced commits are no longer on any branch, but GitHub may keep serving them
+by hash for a while, so treat anything published as published.
+
+`machines/<id>.json`, one per machine, exactly these fields:
+
+| Field | Example | Notes |
+|---|---|---|
+| `languages` | `{"Python": 61234}` | Lines added per language, all time |
+| `event_types` | `{"edit": 812, "commit": 95}` | Count per event type, all time |
+| `days` | `{"2025-10-09": 412}` | Lines added per day, the last 126 days, in that machine's timezone |
+| `bytes`, `events` | `4182230`, `1043` | Totals |
+| `first_ts` | `1741000000` | Time of the machine's first recorded event |
+| `repo_count` | `37` | One integer, as below |
+| `updated_at` | `1760000000` | When that machine's numbers last changed |
+| `format` | `1` | File format version |
+
+The file name is the machine's random `source_id` (16 random bytes) — never a
+hostname, username or path. The JSON is built from SQL that names its columns
+and never selects `project_key`, and a test checks the pushed bytes for the
+project path, the hostname and the username.
+
+`card.svg` and `card-dark.svg` show what the Worker's card showed (below), with
+one change: the date of the last change ("updated 2025-10-09") instead of "5min
+ago". `README.md` is fixed text.
+
+What this publishes **beyond** the Worker's card: the per-machine split of those
+numbers, so how many machines you code on and how much on each, and lines per
+day as raw numbers rather than heatmap shades. Commits are authored as
+`devcard <devcard@devcard.invalid>`, not with your git identity.
+
+| Data | Local SQLite | Published to your repository |
+|---|---|---|
+| The aggregate fields above | computed locally | ✅ |
+| Individual events, timestamps of single edits | ✅ | ❌ (per-day totals only) |
+| Project names, working directories | ✅ | ❌ |
+| File names, code content | ❌ never stored | ❌ |
+| Hostname, username, MAC address | ❌ never stored | ❌ |
+
+There is no token and no server: nothing accepts writes except your repository,
+through your own git credentials. Over HTTPS, devcard passes `gh auth
+git-credential` to git for each command instead of changing your git config.
+The other network calls are `gh api user` for the repository count, and one
+fetch of `https://github.com/<you>.png` a day for the avatar (`"avatar": false`
+in `config.json` turns that off).
+
+Files read back from the branch are treated as untrusted: anything not in the
+expected format and shape is skipped, language names longer than 32 characters
+are dropped, and every string is XML-escaped when rendered.
+
+## The legacy Worker: what leaves your machine
 
 Each synced event is one row of exactly these fields:
 
@@ -137,7 +191,8 @@ The card is built to be boring to attack.
   dependency install scripts disabled (`worker/.npmrc`). Nothing from npm ships
   to production except what Wrangler bundles from `worker/src`, which has no
   runtime dependencies.
-- The Python side has no third-party dependencies.
+- The Python side has no third-party dependencies, except `tzdata` on Windows
+  (an IANA time-zone database, which Windows does not ship).
 - Every GitHub Action is pinned to a commit SHA, and the Gitleaks image to a
   digest. Dependabot proposes updates to npm packages and Actions after a
   seven-day cooldown; security updates are not delayed.
