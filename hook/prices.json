@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "table_version": "2026-10-13-sonnet-4.5-example-v1",
+  "calculation_version": "disjoint-text-tokens-v1",
+  "verified_at": "2026-10-13",
+  "currency": "USD",
+  "source": {
+    "url": "https://github.com/anthropics/skills/blob/main/skills/claude-api/shared/prompt-caching.md?plain=1",
+    "basis": "Sonnet 4.5 standard text-rate example",
+    "revision": null,
+    "sha256": null
+  },
+  "aliases": {
+    "claude-sonnet-4-5-20250929": "claude-sonnet-4-5",
+    "claude-sonnet-4.5": "claude-sonnet-4-5"
+  },
+  "models": {
+    "claude-sonnet-4-5": {
+      "family": "claude-sonnet",
+      "rates_per_million": {
+        "input": "3",
+        "output": "15",
+        "cache_read": "0.30",
+        "cache_write_5m": "3.75",
+        "cache_write_1h": "6",
+        "cache_write": null
+      },
+      "context_tiers": [],
+      "context_limit": 200000
+    },
+    "claude-sonnet-4": {"family": "claude-sonnet", "rates_per_million": null},
+    "claude-sonnet-4-6": {"family": "claude-sonnet", "rates_per_million": null},
+    "claude-opus-4": {"family": "claude-opus", "rates_per_million": null},
+    "claude-opus-4-1": {"family": "claude-opus", "rates_per_million": null},
+    "claude-opus-4-5": {"family": "claude-opus", "rates_per_million": null},
+    "claude-opus-4-6": {"family": "claude-opus", "rates_per_million": null},
+    "claude-haiku-4-5": {"family": "claude-haiku", "rates_per_million": null},
+    "gpt-5": {"family": "gpt", "rates_per_million": null},
+    "gpt-5-codex": {"family": "gpt", "rates_per_million": null},
+    "gpt-5.1": {"family": "gpt", "rates_per_million": null},
+    "gpt-5.1-codex": {"family": "gpt", "rates_per_million": null},
+    "gpt-5.1-codex-max": {"family": "gpt", "rates_per_million": null},
+    "gpt-5.2": {"family": "gpt", "rates_per_million": null},
+    "gpt-5.2-codex": {"family": "gpt", "rates_per_million": null},
+    "gpt-5.3-codex": {"family": "gpt", "rates_per_million": null},
+    "gpt-5.4": {"family": "gpt", "rates_per_million": null},
+    "gpt-6": {"family": "gpt", "rates_per_million": null},
+    "gpt-6.1": {"family": "gpt", "rates_per_million": null},
+    "o3": {"family": "o", "rates_per_million": null},
+    "o4-mini": {"family": "o", "rates_per_million": null}
+  }
+}
