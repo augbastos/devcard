@@ -57,6 +57,8 @@ def main():
         return
 
     try:
+        if lib.capture_mode() not in (None, "claude"):
+            return
         event = lib.parse_event(payload)
         if event is None:
             return

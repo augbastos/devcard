@@ -14,6 +14,77 @@ codebase. Commits here are counted from the agent's own `git commit`
 invocations, and `--amend` *is* excluded, because it rewrites one already
 counted.
 
+## Agent attribution
+
+Capture modes remain **exclusive per machine**. With an installed `mode` marker,
+the Claude Code hook records only in `claude` mode and the git hook records only
+in `git` mode. Other marker values suppress both hooks. A missing marker retains
+the legacy defaults; select one mode when installing rather than enabling both
+hooks without a marker. Attribution does not change line or commit counting.
+
+Each new hook event records its origin using a fixed allowlist:
+
+| Agent | Meaning |
+|---|---|
+| `claude-code` | A Claude Code hook event, including its captured commit invocations |
+| `git` | A git post-commit event, including every per-language diff row |
+| `codex` | Reserved for an explicit Codex capture adapter |
+| `unknown` | Origin is unavailable |
+
+`git` identifies the capture mechanism, not the person or agent that authored a
+commit. Commit messages, co-author trailers and the currently installed mode
+are not used to infer authorship. There is no manual-coding attribution here.
+
+The local SQLite upgrade adds a nullable `agent` column with an allowlist
+constraint. It is idempotent and preserves existing rows, counts, sync flags
+and event identities. **All rows predating attribution stay NULL and read as
+`unknown`** in activity aggregates: this implementation does not infer their
+origin, even from their event type. The machine's present mode cannot prove
+which hook captured an older event. Missing attribution on an imported event
+also reads as `unknown`; new explicit values outside the allowlist are rejected.
+
+The extension point for Codex is a normalized event passed to
+`devcard_lib.insert_event(conn, event)` with `event["agent"] = "codex"`. An
+adapter must select its own exclusive machine capture mode and keep the same
+counting units. This milestone provides the schema and API, not a Codex hook or
+a reader of Codex session logs; git-mode commits remain attributed to `git`.
+
+## Estimated active time
+
+`devcard_activity.active_minutes(events, timezone=...)` estimates activity from
+captured Unix timestamps. It sorts and deduplicates timestamps **per agent**.
+A gap **greater than 15 minutes** ends a session; a gap of exactly 15 minutes
+continues it. Each session contributes its first-to-last elapsed time plus a
+**2-minute tail**, so a single event contributes 2 minutes. Both values are
+configurable through `idle_minutes` and `tail_minutes` (nonnegative minutes).
+Multiple language rows and a commit at the same timestamp share one time signal.
+
+Sessions and tails crossing midnight are split across local calendar days in
+the explicitly supplied IANA timezone or Python `tzinfo`. Durations use elapsed
+Unix time, including across daylight-saving changes. No machine-local timezone
+is assumed. IANA names require an available timezone database; an explicit
+Python `datetime.timezone` offset works without one. Interleaved agents have
+independent sessions: one agent's events
+cannot keep another agent's session open. Concurrent sessions can overlap, so
+the sum is estimated **agent time**, which can exceed elapsed wall time; it is
+not a measure of human attention or actual agent runtime.
+
+This is an **estimate**, unlike WakaTime's editor heartbeats. Sparse commits
+miss work between commits; dense edits can span time when nobody is typing.
+The tail is a convention, not observed work. These numbers are unsuitable as
+precise time sheets or evidence of human coding time.
+
+`devcard_activity.export_aggregate(conn, timezone=...)` returns UTF-8 JSON bytes
+with `agents` totals (events, commits, code edits, lines added/removed, bytes
+added and active minutes) and `active_minutes` by ISO day and agent. Git `diff`
+rows are not counted as code edits. Per-agent counts sum to the captured totals;
+per-agent active minutes sum to the daily estimates. NULL agents are grouped
+under `unknown`. The SQL projection excludes projects, paths, source ids and
+event row ids; the exported bytes also omit languages, raw timestamps, event
+types and code content. Only fixed agent labels, dates and numbers are exported.
+The legacy Worker sync payload and card rendering are unchanged; this is a
+local aggregate API for later integration.
+
 ## "code edits" is a claude-mode number
 
 The two modes do not produce a comparable *count of actions*. In `claude` mode

@@ -171,6 +171,16 @@ class VersionFloorTest(unittest.TestCase):
                    if name.endswith(".py") and not name.startswith("test_")}
         self.assertEqual(modules, on_disk)
 
+    def test_the_package_ships_the_data_files_it_reads(self):
+        # prices.json (usage cost) and the dashboard page are read at run time; a pipx
+        # install only has them if package-data names them.
+        with open(os.path.join(ROOT, "pyproject.toml"), "rb") as f:
+            patterns = tomllib.load(f)["tool"]["setuptools"]["package-data"]["devcard"]
+        self.assertIn("prices.json", patterns)
+        self.assertIn("dashboard/*", patterns)
+        self.assertTrue(os.path.exists(os.path.join(ROOT, "devcard", "prices.json")))
+        self.assertTrue(os.path.exists(os.path.join(ROOT, "devcard", "dashboard", "index.html")))
+
 
 class HookPublishesTest(TempDirTest):
     """A real commit, a real git hook process started with `-S`, a real push."""

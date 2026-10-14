@@ -29,7 +29,12 @@ devcard = "devcard.cli:main"
 # to the package — the layout they already have in hook/. Tests stay out.
 packages = ["devcard"]
 package-dir = { "" = "hook", "devcard" = "devcard" }
-py-modules = ["devcard_lib", "devcard_capture", "devcard_sync", "devcard_git_hook", "install_git_hook", "install_claude_hook"]
+py-modules = ["devcard_lib", "devcard_capture", "devcard_sync", "devcard_git_hook", "install_git_hook", "install_claude_hook",
+              "devcard_activity", "devcard_usage"]
+
+[tool.setuptools.package-data]
+# Non-Python files the package reads at run time: the bundled price table and the dashboard page.
+devcard = ["prices.json", "dashboard/*"]
 
 [tool.setuptools.dynamic]
 version = { attr = "devcard.__version__" }
