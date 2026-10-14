@@ -21,11 +21,7 @@ MODE_PATH = os.path.normpath(os.path.expanduser("~/.claude/devcard/mode"))
 
 
 def capture_mode():
-    try:
-        with open(MODE_PATH, encoding="utf-8") as f:
-            return f.read().strip()
-    except OSError:
-        return None
+    return lib.capture_mode(MODE_PATH)
 
 
 def _git(repo_dir, *args, check=False):
@@ -135,7 +131,7 @@ def main():
     try:
         # A machine in "claude" mode captures edits live; recording the commit
         # diff too would double-count the same lines.
-        if capture_mode() == "claude":
+        if capture_mode() not in (None, "git"):
             return
 
         top = _git(os.getcwd(), "rev-parse", "--show-toplevel")
@@ -162,12 +158,12 @@ def main():
                     # which capture mode wrote the row.
                     "ts": now, "language": language, "lines_added": la,
                     "lines_removed": lr, "bytes_added": lang_bytes.get(language, 0),
-                    "event_type": "diff", "project_key": project_key,
+                    "event_type": "diff", "project_key": project_key, "agent": "git",
                 })
             lib.insert_event(conn, {
                 "ts": now, "language": None, "lines_added": 0,
                 "lines_removed": 0, "bytes_added": 0,
-                "event_type": "commit", "project_key": project_key,
+                "event_type": "commit", "project_key": project_key, "agent": "git",
             })
             # A full drain, not one batch. The installed hook line runs this
             # script in the background (`&`), so the commit never waits on the
