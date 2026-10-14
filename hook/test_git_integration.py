@@ -46,6 +46,11 @@ class GitRepoCase(unittest.TestCase):
     def setUp(self):
         self.base = tempfile.mkdtemp(prefix="devcard-git-")
         self.addCleanup(shutil.rmtree, self.base, True)
+        # Temporary fixtures can live inside a checkout. Git must not discover
+        # that enclosing repository when a test deliberately has no .git.
+        ceiling = mock.patch.dict(os.environ, {"GIT_CEILING_DIRECTORIES": self.base})
+        ceiling.start()
+        self.addCleanup(ceiling.stop)
 
         # Hard guard. `init_db` used to take the real path as a DEFAULT
         # argument, so patching the module constant did nothing and a test run

@@ -306,7 +306,10 @@ class TestGitRoot(unittest.TestCase):
             self.assertEqual(lib.git_root(nested), os.path.normcase(root))
 
     def test_returns_none_outside_a_repo(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(os.path, "exists", return_value=False):
+            # The task's temporary directory may itself live in a checkout;
+            # this fixture represents a filesystem without any .git ancestors.
             self.assertIsNone(lib.git_root(os.path.join(tmp, "plain")))
 
 
@@ -327,6 +330,13 @@ class TestRepoCount(unittest.TestCase):
         # the git-root collapsing rather than the temp rule.
         with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch.object(lib, "TEMP_ROOT", os.path.normcase(os.path.join("C:", "nowhere"))):
+            real_exists = os.path.exists
+            fixture_prefix = os.path.normcase(os.path.abspath(tmp)) + os.sep
+
+            def fixture_exists(path):
+                # Do not count the checkout containing the temporary fixture.
+                return os.path.normcase(os.path.abspath(path)).startswith(fixture_prefix) and real_exists(path)
+
             repo = os.path.join(tmp, "repo")
             os.makedirs(os.path.join(repo, ".git"))
             os.makedirs(os.path.join(repo, "site"))
@@ -341,7 +351,8 @@ class TestRepoCount(unittest.TestCase):
                 os.path.join(tmp, "scratchpad", "x"),  # junk
             ])
             try:
-                self.assertEqual(lib.local_repo_count(conn), 1)
+                with mock.patch.object(os.path, "exists", side_effect=fixture_exists):
+                    self.assertEqual(lib.local_repo_count(conn), 1)
             finally:
                 conn.close()
 

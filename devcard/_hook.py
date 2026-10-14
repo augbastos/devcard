@@ -16,6 +16,9 @@ except ImportError:
     sys.path.insert(0, HOOK_DIR)
     import devcard_lib as lib  # noqa: F401
 
+import devcard_usage as usage  # noqa: E402, F401
+import devcard_activity as activity  # noqa: E402, F401
+
 
 def hook_script(name):
     """Absolute path of one of the hook entrypoints, wherever they were installed."""

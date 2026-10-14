@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from devcard import cli, config, publish
+from devcard import cli, config, publish, usage
 from devcard._hook import lib
 
 REAL_HOME = os.path.normpath(os.path.expanduser("~/.claude"))
@@ -31,6 +31,7 @@ class Home:
             (lib, "SOURCE_ID_PATH"): os.path.join(self.dir, "source-id"),
             (lib, "GITHUB_CACHE_PATH"): os.path.join(self.dir, "github-repos.json"),
             (lib, "CONFIG_PATH"): os.path.join(self.dir, "config.json"),
+            (lib, "MODE_PATH"): os.path.join(self.dir, "mode"),
             (config, "HOME"): self.dir,
             (cli, "SETTINGS_PATH"): os.path.join(self.dir, "claude-settings.json"),
             (cli, "MODE_PATH"): os.path.join(self.dir, "mode"),
@@ -49,6 +50,7 @@ class Home:
             (publish, "fetch_avatar", lambda user, now=None: None),
             # A real waiter is a detached process that would outlive the patches.
             (publish, "_spawn_waiter", lambda: None),
+            (usage, "default_roots", lambda: ()),
         ):
             patcher = mock.patch.object(module, attr, value)
             patcher.start()

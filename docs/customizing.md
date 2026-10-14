@@ -17,6 +17,8 @@ for the card itself — the SVG is plain template strings.
   "lang": "en",
   "timezone": "",
   "avatar": true,
+  "usage": true,
+  "card": {"show_agents": false, "show_usage": false},
   "badges": [{"kind": "certification", "label": "AWS Cloud Practitioner"}],
   "pins": [{"repo": "my-project", "note": "what it does, in a line"}]
 }
@@ -31,8 +33,16 @@ for the card itself — the SVG is plain template strings.
 | `badges` | Up to 8 pills. `kind` is `badge`, `certification` or `award` (star, seal, trophy) |
 | `pins` | Up to 3 linked boxes for repositories under your account. No star count: that would need the GitHub API at every publish |
 | `remote` | A git URL to push to instead of `https://github.com/<repo>.git`, e.g. SSH |
+| `usage` | Default `true`; `false` skips transcript discovery/scanning. Previously stored aggregates are retained and still published. |
+| `card.show_agents` | Default `false`; show each agent's percentage of recorded lines added and estimated active hours. Concurrent agents are counted independently. |
+| `card.show_usage` | Default `false`; show recorded tokens and an approximate API-equivalent USD estimate. Unknown or partially priced totals show “—”. |
 
 Changes show on the next publish; `devcard publish --force` to see them now.
+
+Both optional lines extend the Python card's height in every layout. With
+both off, output keeps the original golden SVG bytes. They do not change the
+legacy Worker. Usage is published in machine JSON regardless of display flags;
+turning scanning off does not erase previously stored data.
 
 ## Changing the card itself
 

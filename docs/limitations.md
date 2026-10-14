@@ -3,6 +3,15 @@
 Stated rather than hidden. Each of these is a decision or a real gap, not a
 to-do list.
 
+- **Active time is an event-based estimate, not editor or wall-clock time.**
+  Sessions use a 15-minute idle threshold and 2-minute tail. Concurrent agents
+  and machine totals add independently, so summed hours can exceed elapsed time.
+- **Usage estimates depend on available transcripts and bundled rates.**
+  Unknown prices show “—”; a partially priced total is not displayed as a
+  complete estimate. Restart the dashboard to scan newer logs. Machine merges
+  sum usage and cannot deduplicate transcripts copied across machines.
+  [Counting and pricing details](usage-and-cost.md).
+
 - **Squash merges can double-count** in `git` mode if the squashed branch's own
   commits were captured on the same machine. A squash commit is
   indistinguishable from hand-written work — see

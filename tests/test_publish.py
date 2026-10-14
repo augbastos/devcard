@@ -276,12 +276,17 @@ class PublishTest(TempDirTest):
                 {**edit(NOW - 60, "Python", 12), "project_key": PROJECT},
                 {"ts": NOW - 30, "language": None, "lines_added": 0, "event_type": "commit"},
             ])
-            run(cfg_for(self.remote), force=True)
+            # Both opt-in lines on: the file then carries its largest allowed set.
+            run({**cfg_for(self.remote), "card": {"show_agents": True, "show_usage": True}}, force=True)
             machine = lib.read_source_id()
         raw = self.show(f"machines/{machine}.json")
         agg = json.loads(raw)
         self.assertEqual(set(agg), {"format", "languages", "event_types", "days", "bytes", "events",
-                                    "first_ts", "repo_count", "updated_at"})
+                                    "first_ts", "repo_count", "updated_at", "agents", "active_minutes", "usage"})
+        self.assertEqual(set(agg["agents"]["unknown"]), {"events", "commits", "code_edits", "lines_added",
+                                                          "lines_removed", "bytes_added", "active_minutes"})
+        self.assertEqual(agg["agents"]["unknown"]["active_minutes"], 2.5)
+        self.assertEqual(agg["active_minutes"], {"2025-10-09": {"unknown": 2.5}})
         self.assertEqual(agg["languages"], {"Python": 12})
         self.assertEqual(agg["event_types"], {"commit": 1, "edit": 1})
         everything = raw + "".join(self.show(name) for name in self.tree() if name != f"machines/{machine}.json")

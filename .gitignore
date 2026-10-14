@@ -15,6 +15,7 @@ worker/wrangler.toml
 
 # Local agent tooling and internal notes, never part of the public repository.
 .worktrees/
+.task-tmp/
 .superpowers/
 docs/superpowers/
 

@@ -36,7 +36,8 @@ function drawSummary(value) {
   $("streak").textContent = `${number(value.streak)} days`;
   $("repos").textContent = number(value.totals.repo_count);
   $("counting").textContent = `${number(value.totals.actions)} edit/write actions · ${number(value.totals.diffs)} commit diffs · ${number(value.totals.commits)} commits. These are different units; capture one mode per machine.`;
-  $("timezone").textContent = `day boundaries: ${value.timezone}`;
+  $("timezone").textContent = `day boundaries: ${value.timezone}; activity/usage: ${value.usage_timezone}`;
+  $("usage-warning").hidden = !value.usage_incomplete;
   $("language-bar").replaceChildren();
   $("language-legend").replaceChildren();
   value.languages.forEach((language, i) => {
@@ -121,9 +122,12 @@ async function refresh() {
     drawSummary(value);
     if (!$("from").value) $("from").value = value.heatmap[0][0].day;
     if (!$("to").value) $("to").value = value.today;
-    tableRows("agent-rows", agents.map((a) => [a.agent, number(a.lines_added), number(a.lines_removed), number(a.bytes_added), number(a.events)]));
+    tableRows("agent-rows", agents.map((a) => [a.agent, number(a.lines_added), number(a.lines_removed), number(a.bytes_added), number(a.events), a.active_minutes === null ? "—" : number(a.active_minutes)]));
+    const activeDays = agents.flatMap((a) => a.active_days.map((day) => ({...day, agent: a.agent})));
+    activeDays.sort((a, b) => a.day.localeCompare(b.day) || a.agent.localeCompare(b.agent));
+    tableRows("agent-active-rows", activeDays.map((a) => [a.day, a.agent, number(a.active_minutes)]));
     $("agent-empty").hidden = agents.length !== 0;
-    tableRows("usage-rows", usage.map((u) => [`${u.agent} / ${u.model}`, number(u.input_tokens), number(u.output_tokens), number(u.cached_input_tokens), number(u.cache_write_input_tokens), number(u.reasoning_output_tokens), number(u.total_tokens), u.cost_usd === null ? "Unavailable" : `$${Number(u.cost_usd).toFixed(4)}`]));
+    tableRows("usage-rows", usage.map((u) => [u.date, `${u.agent} / ${u.model_family}`, number(u.input_tokens), number(u.output_tokens), number(u.cache_read_tokens), number(u.cache_write_tokens), number(u.total_tokens), u.estimated_cost_usd === null ? "—" : `$${Number(u.estimated_cost_usd).toFixed(4)}`]));
     $("usage-empty").hidden = usage.length !== 0;
     await loadDays();
     const preview = $("preview");

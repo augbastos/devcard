@@ -11,6 +11,8 @@ card is a file that sits unchanged until the next publish, so the Worker's
 byte for byte, which is what the golden tests check.
 """
 import math
+from decimal import Decimal, localcontext
+import re
 
 from .data import NAMED_LANGUAGES, with_other_bucket
 from .jsfmt import en_us, js_len, js_round, num, to_fixed
@@ -40,6 +42,52 @@ LAYOUTS = ("full", "wide", "banner", "half", "vertical")
 
 
 def render(data, theme="default", lang="en", layout="full", now=0, all_langs=False, static=False):
+    """Render a variant, optionally extending it with agent and usage estimates.
+
+    Unknown variant names fall back. `theme` accepts a name or palette dict.
+    Without opt-in flags the legacy renderer's bytes are returned unchanged.
+    """
+    svg = _render_base(data, theme, lang, layout, now, all_langs, static)
+    lines = []
+    if data.show_agents:
+        totals = sorted(data.agent_totals.items(), key=lambda r: (-r[1]["lines_added"], r[0]))
+        total = sum(row["lines_added"] for _, row in totals)
+        labels = {"claude-code": "Claude Code", "codex": "Codex", "git": "git", "unknown": "Unknown"}
+        line = (" · ".join(f"{labels[agent]} {js_round(row['lines_added'] / total * 100)}%"
+                           for agent, row in totals if row["lines_added"])
+                if total else "Agent attribution unavailable")
+        if data.active_minutes is not None:
+            duration = (f"{data.active_minutes:g}min" if data.active_minutes < 60
+                        else f"{data.active_minutes / 60:.1f}".removesuffix(".0") + "h")
+            line += f" · {duration} active (est.)"
+        lines.append(line)
+    if data.show_usage:
+        tokens = sum(sum(row[name] for name in ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"))
+                     for row in data.usage)
+        costs = [row["estimated_cost_usd"] for row in data.usage]
+        with localcontext() as ctx:
+            ctx.prec = 80
+            cost = None if not costs or any(c is None for c in costs) else sum(map(Decimal, costs), Decimal(0))
+        price = "—" if cost is None else f"~${cost:.2f}"
+        lines.append(f"{fmt_count(tokens, '.').upper()} tokens · {price} API-equivalent")
+    if not lines:
+        return svg  # Defaults retain the original bytes for every layout.
+    root = re.search(r'width="([\d.]+)" height="([\d.]+)" viewBox="0 0 [\d.]+ [\d.]+"', svg)
+    width, height = map(float, root.groups())
+    new_height = height + 22 * len(lines)
+    svg = svg[:root.start()] + (f'width="{num(width)}" height="{num(new_height)}" '
+                                f'viewBox="0 0 {num(width)} {num(new_height)}"') + svg[root.end():]
+    svg = svg.replace(f'height="{num(height - 1)}" rx=', f'height="{num(new_height - 1)}" rx=', 1)
+    extra = "".join(
+        f'<text class="mut" x="24" y="{num(height + 13 + i * 22)}" {SANS} font-size="10">'
+        f'<title>{escape_xml("Share of recorded lines added; activity estimate (concurrent agents counted independently): " + line if data.show_agents and i == 0 else line + " (estimate; not your subscription bill)")}</title>'
+        f'{escape_xml(truncate(line, int((width - 48) / 5.5)))}</text>'
+        for i, line in enumerate(lines)
+    )
+    return svg.replace("</svg>", extra + "</svg>")
+
+
+def _render_base(data, theme="default", lang="en", layout="full", now=0, all_langs=False, static=False):
     """Render one variant. Unknown names fall back, as the Worker's query params do.
 
     `theme` is a theme name or a palette dict as themes.theme_pair returns.

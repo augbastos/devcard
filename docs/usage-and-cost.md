@@ -2,9 +2,14 @@
 
 `hook/devcard_usage.py` reads local Claude Code and Codex JSONL transcripts.
 It uses Python's standard library and adds usage tables to the existing local
-SQLite database. It makes no network requests. This module is a local building
-block: capture hooks, the installer, background scheduling, Worker ingestion,
-D1 and the card do not yet consume its output.
+SQLite database. It makes no network requests. `devcard publish` scans before
+aggregation (after the publish debounce); `devcard render` also scans before
+aggregation. `devcard serve` scans an existing database once at startup before
+opening its read-only HTTP views. Restart it to import newer transcript usage;
+Refresh reads newer database writes. Set `"usage": false` to skip scanning.
+Errors and incomplete-scan diagnostics go to local `errors.log`, with structural
+codes instead of transcript text or paths. A failed scan does not stop publishing.
+The capture hot path, Worker and D1 do not consume usage.
 
 ## What is read
 
@@ -97,7 +102,10 @@ and `unknown`. Exact model names and cache-write TTLs stay local. Unrecognized
 model strings are discarded locally and map to `unknown`; they cannot become
 public identifiers. Export rejects invalid enums, dates, counts and costs.
 Tests inspect serialized bytes as well as the local database for private
-sentinels. Nothing is uploaded by this module.
+sentinels. `devcard publish` includes this projection in the machine JSON only when
+`card.show_usage` is on (default off); machine merges sum matching
+day/agent/family buckets and propagate null costs. The scanner itself does not
+upload anything, and with the line off the usage aggregates never leave the machine.
 
 ## How cost is estimated
 
@@ -108,7 +116,7 @@ It does not estimate a subscription charge, prove savings, or convert a
 subscription usage meter. Additional services, taxes, batch discounts, service
 tiers, promotional credits and private contracts are outside its basis.
 
-`hook/prices.json` is an offline versioned table with schema version, table
+`devcard/prices.json` is an offline versioned table with schema version, table
 version, verification date, currency, calculation policy, explicit aliases
 and source provenance. Only the cited Sonnet 4.5 example
 rates are seeded, in USD per million tokens: input 3, output 15, cache read
@@ -160,6 +168,15 @@ the JSON file alone does not silently reprice previously recorded calls.
 
 ## Local use
 
+The package integration discovers `~/.claude/projects/**/*.jsonl`, plus
+`~/.codex/sessions/**/*.jsonl` and `~/.codex/archived_sessions/**/*.jsonl`.
+`CODEX_HOME` overrides the Codex root. Only JSONL transcripts are opened.
+Each file's saved byte cursor avoids parsing unchanged content on reruns.
+The configured IANA timezone applies to usage buckets; without one, usage
+uses stable UTC buckets (code-activity days still use system-local time).
+Changing the usage timezone requires an explicit local rebuild; a mismatch
+is logged and previous aggregates remain available.
+
 The caller passes its existing connection, explicit transcript paths and a
 uniform timezone. UTC is the default. A database's timezone cannot silently
 change between scans, since that would mix incompatible daily buckets.
@@ -207,5 +224,4 @@ surface structural gaps; do not describe such results as complete accounting.
 - Public aggregates have no call identity and cannot deduplicate overlapping
   logs across machines. Each input set needs exclusive machine ownership.
 - Usage aggregates are separate from code `edit`/`write` and git `diff` events.
-  Server-side usage contracts, validation, migration, scheduling and rendering
-  require their own integration changes.
+  The legacy Worker has no usage ingestion or rendering contract.

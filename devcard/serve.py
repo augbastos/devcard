@@ -13,8 +13,8 @@ import time
 from urllib.parse import parse_qs, urlsplit
 from zoneinfo import ZoneInfoNotFoundError
 
-from . import config, data
-from ._hook import lib
+from . import config, data, usage
+from ._hook import lib, usage as usage_hook
 from .render import render
 
 DEFAULT_PORT = 47811
@@ -24,7 +24,7 @@ ASSETS = {
     "/dashboard.css": ("dashboard.css", "text/css; charset=utf-8"),
     "/dashboard.js": ("dashboard.js", "text/javascript; charset=utf-8"),
 }
-COST_LABEL = "API-equivalent cost (estimate; not your subscription bill)"
+COST_LABEL = usage_hook.COST_LABEL
 
 
 def _columns(conn, table):
@@ -58,7 +58,7 @@ class Dashboard:
 
     def card(self, aggregate):
         return data.card_data(data.merge([aggregate]), self.cfg.get("github_user") or "devcard",
-                              int(self.clock()), tz=self.cfg.get("timezone") or None)
+                              int(self.clock()), tz=self.cfg.get("timezone") or None, card=self.cfg.get("card"))
 
     def summary(self, conn):
         aggregate = self.aggregate(conn)
@@ -74,6 +74,9 @@ class Dashboard:
             "today": self.to_day(int(self.clock())),
             "timezone": self.cfg.get("timezone") or "local",
             "first_ts": card.first_ts,
+            "usage_timezone": self.cfg.get("timezone") or "UTC",
+            "usage_incomplete": bool(conn is not None and _columns(conn, "usage_diagnostics")
+                                     and conn.execute("SELECT 1 FROM usage_diagnostics LIMIT 1").fetchone()),
         }
 
     def days(self, conn, params):
@@ -106,61 +109,16 @@ class Dashboard:
     def agents(self, conn):
         if conn is None or "agent" not in _columns(conn, "events"):
             return []
-        return [dict(zip(("agent", "lines_added", "lines_removed", "bytes_added", "events"), row, strict=True))
-                for row in conn.execute(
-                    "SELECT COALESCE(NULLIF(agent, ''), 'unknown') AS attribution,"
-                    " COALESCE(SUM(lines_added), 0), COALESCE(SUM(lines_removed), 0),"
-                    " COALESCE(SUM(bytes_added), 0), COUNT(*) FROM events"
-                    " GROUP BY attribution ORDER BY SUM(lines_added) DESC, attribution"
-                )]
+        exported = data.activity_rows(conn, self.cfg.get("timezone") or None)
+        return [{"agent": agent, **row, "active_days": [
+                    {"day": day, "active_minutes": agents[agent]}
+                    for day, agents in exported["active_minutes"].items() if agent in agents]}
+                for agent, row in sorted(exported["agents"].items(),
+                                         key=lambda item: (-item[1]["lines_added"], item[0]))]
 
     def usage(self, conn):
-        if conn is None:
-            return []
-        # M4 has not shipped yet. Accept one recognized table, never sum a raw
-        # table and its daily rollup (which would count the same tokens twice).
-        columns = set()
-        for table in ("usage", "usage_events", "usage_daily", "daily_usage"):
-            columns = _columns(conn, table)
-            if columns:
-                break
-        if not {"agent", "model"} <= columns:
-            return []
-        aliases = {
-            "input_tokens": ("input_tokens",), "output_tokens": ("output_tokens",),
-            "cached_input_tokens": ("cached_input_tokens", "cache_read_input_tokens"),
-            "cache_write_input_tokens": ("cache_write_input_tokens", "cache_creation_input_tokens"),
-            "reasoning_output_tokens": ("reasoning_output_tokens",),
-            "total_tokens": ("total_tokens",),
-            "cost_usd": ("cost_usd", "estimated_cost_usd"),
-        }
-        selected = {key: next((name for name in names if name in columns), None)
-                    for key, names in aliases.items()}
-        if not any(selected[key] for key in selected if key != "cost_usd"):
-            return []
-        expressions = [f'SUM("{name}")' if name else "NULL" for name in selected.values()]
-        cost_column = selected["cost_usd"]
-        if cost_column:
-            expressions[-1] = (f'CASE WHEN COUNT("{cost_column}") = COUNT(*) '
-                               f'THEN SUM("{cost_column}") ELSE NULL END')
-        sql = ("SELECT COALESCE(NULLIF(agent, ''), 'unknown'), COALESCE(NULLIF(model, ''), 'unknown'), "
-               + ", ".join(expressions) + f' FROM "{table}" GROUP BY 1, 2 ORDER BY 1, 2')
-        result = []
-        for values in conn.execute(sql):
-            row = dict(zip(("agent", "model", *selected), values, strict=True))
-            for key in selected:
-                if key != "cost_usd" and key != "total_tokens":
-                    row[key] = int(row[key] or 0)
-            if row["total_tokens"] is None:
-                # Cached input and reasoning output are normally subsets. Do
-                # not add them again; cache creation is separate in Claude logs.
-                row["total_tokens"] = row["input_tokens"] + row["output_tokens"] + row["cache_write_input_tokens"]
-                if selected["cached_input_tokens"] == "cache_read_input_tokens":
-                    row["total_tokens"] += row["cached_input_tokens"]
-            else:
-                row["total_tokens"] = int(row["total_tokens"])
-            result.append(row)
-        return result
+        return [{**row, "total_tokens": sum(row[name] for name in usage_hook.TOKEN_FIELDS)}
+                for row in usage.public_rows(conn)]
 
     def response(self, path, params):
         if path == "/favicon.ico":
@@ -305,6 +263,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 def cmd_serve(args):
     try:
         dashboard = Dashboard(cfg=config.load() or dict(config.DEFAULTS))
+        usage.scan_local(dashboard.cfg, db_path=dashboard.db_path)
         with DashboardServer(dashboard, args.port) as server:
             print(f"devcard dashboard: http://127.0.0.1:{server.server_address[1]}/", flush=True)
             print("Read-only local data. Stop with Ctrl+C.", flush=True)

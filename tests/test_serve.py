@@ -12,7 +12,8 @@ import threading
 import unittest
 from unittest import mock
 
-from devcard import cli, config, data, serve
+from devcard import cli, config, data, serve, usage
+from devcard._hook import usage as usage_hook
 from devcard.render import render
 
 from .helpers import TempDirTest
@@ -104,11 +105,14 @@ class ServerTest(TempDirTest):
 
     def test_agents_sum_to_all_event_totals(self):
         rows = self.get_json("/api/agents")
-        self.assertEqual(rows[0], {"agent": "claude-code", "lines_added": 10, "lines_removed": 2, "bytes_added": 100, "events": 1})
+        claude = next(row for row in rows if row["agent"] == "claude-code")
+        self.assertEqual(claude, {"agent": "claude-code", "lines_added": 10, "lines_removed": 2, "bytes_added": 100, "events": 1,
+                                 "commits": 0, "code_edits": 1, "active_minutes": 2,
+                                 "active_days": [{"day": TODAY, "active_minutes": 2}]})
         self.assertEqual(sum(row["lines_added"] for row in rows), 26)
         self.assertEqual(sum(row["events"] for row in rows), 5)
         unknown = next(row for row in rows if row["agent"] == "unknown")
-        self.assertEqual(unknown["events"], 2)
+        self.assertEqual(unknown["events"], 3)
 
     def test_old_schema_and_missing_optional_tables(self):
         with contextlib.closing(sqlite3.connect(self.db_path)) as conn, conn:
@@ -119,25 +123,25 @@ class ServerTest(TempDirTest):
 
     def test_usage_sums_tokens_and_cost_without_inventing_unknown_prices(self):
         with contextlib.closing(sqlite3.connect(self.db_path)) as conn, conn:
-            conn.executescript("""
-                CREATE TABLE usage (agent TEXT, model TEXT, input_tokens INTEGER,
-                    output_tokens INTEGER, cached_input_tokens INTEGER, total_tokens INTEGER, cost_usd REAL);
-                INSERT INTO usage VALUES ('codex', 'test-model', 100, 20, 40, 120, 0.2);
-                INSERT INTO usage VALUES ('codex', 'test-model', 200, 40, 80, 240, 0.4);
-                INSERT INTO usage VALUES ('claude-code', 'unknown-model', 20, 5, 0, 25, NULL);
-            """)
+            usage_hook.ensure_usage_schema(conn)
+            conn.executemany("INSERT INTO usage_aggregates VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [
+                (TODAY, "codex", "gpt", 300, 60, 120, 0, "0.6", 0, 2),
+                (TODAY, "claude", "unknown", 20, 5, 0, 0, "0", 1, 1),
+            ])
         rows = self.get_json("/api/usage")
-        self.assertIsNone(rows[0]["cost_usd"])
-        self.assertEqual(rows[1]["total_tokens"], 360)
-        self.assertEqual(rows[1]["cached_input_tokens"], 120)
-        self.assertAlmostEqual(rows[1]["cost_usd"], 0.6)
+        self.assertIsNone(rows[0]["estimated_cost_usd"])
+        self.assertEqual(rows[1]["total_tokens"], 480)
+        self.assertEqual(rows[1]["cache_read_tokens"], 120)
+        self.assertEqual(rows[1]["estimated_cost_usd"], "0.6")
         # A missing price in a group makes its cost unavailable, not a partial bill.
         with contextlib.closing(sqlite3.connect(self.db_path)) as conn, conn:
-            conn.execute("INSERT INTO usage VALUES ('codex', 'test-model', 0, 0, 0, 0, NULL)")
-        self.assertIsNone(self.get_json("/api/usage")[1]["cost_usd"])
+            conn.execute("UPDATE usage_aggregates SET unknown_cost_calls=1 WHERE agent='codex'")
+        self.assertIsNone(self.get_json("/api/usage")[1]["estimated_cost_usd"])
 
-    def test_usage_raw_aliases_and_no_double_counting_rollups(self):
+    def test_usage_reads_only_m4_rollups(self):
         with contextlib.closing(sqlite3.connect(self.db_path)) as conn, conn:
+            usage_hook.ensure_usage_schema(conn)
+            conn.execute("INSERT INTO usage_aggregates VALUES (?, 'claude', 'claude-sonnet', 10, 5, 20, 3, '0.01', 0, 1)", (TODAY,))
             conn.executescript("""
                 CREATE TABLE usage_events (agent TEXT, model TEXT, input_tokens INTEGER, output_tokens INTEGER,
                     cache_read_input_tokens INTEGER, cache_creation_input_tokens INTEGER, estimated_cost_usd REAL);
@@ -147,8 +151,10 @@ class ServerTest(TempDirTest):
         rows = self.get_json("/api/usage")
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["total_tokens"], 38)
-        self.assertEqual(rows[0]["cache_write_input_tokens"], 3)
-        self.assertEqual(rows[0]["cost_usd"], 0.01)
+        self.assertEqual(rows[0]["cache_write_tokens"], 3)
+        self.assertEqual(rows[0]["estimated_cost_usd"], "0.01")
+        self.assertEqual(rows[0]["date"], TODAY)
+        self.assertEqual(rows[0]["model_family"], "claude-sonnet")
 
     def test_unrecognized_usage_schema_is_empty(self):
         with contextlib.closing(sqlite3.connect(self.db_path)) as conn, conn:
@@ -296,6 +302,7 @@ class CommandTest(unittest.TestCase):
 
     def test_command_handles_taken_port_and_bad_port(self):
         with mock.patch.object(config, "load", return_value=None), mock.patch.object(serve, "Dashboard"), \
+                mock.patch.object(usage, "scan_local"), \
                 contextlib.redirect_stdout(io.StringIO()) as out:
             with mock.patch.object(serve.DashboardServer, "serve_forever", side_effect=KeyboardInterrupt):
                 self.assertEqual(cli.main(["serve", "--port", "0"]), 0)
