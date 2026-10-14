@@ -17,8 +17,8 @@ to-do list.
   the same lines twice; `~/.claude/devcard/mode` is what keeps the git hook
   quiet on a Claude Code machine.
 - **The serverless card is near-live, not live**: up to 15 minutes between
-  publishes, then up to 5 minutes of `raw.githubusercontent.com` caching and
-  however long GitHub's image proxy keeps its copy — see
+  publishes, then up to 5 minutes of `raw.githubusercontent.com` caching
+  (`max-age=300`). These SVGs are not proxied through GitHub's image proxy — see
   [the serverless card](serverless.md#how-fresh-the-card-is). It publishes only
   when a hook fires, so the "updated" date and the heatmap's "today" do not move
   on days you do not code.

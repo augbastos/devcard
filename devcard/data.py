@@ -15,10 +15,15 @@ Two steps, kept apart because they run on different machines:
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 import math
+import re
+import time
+import warnings
 
 from .strings import MONTHS
 
 AGGREGATE_FORMAT = 1
+MIN_TIMESTAMP = 1577836800  # 2020-01-01 UTC
+LANGUAGE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 _+#.()\-]{0,31}\Z")
 HEAT_WEEKS = 16
 # Days of `days` worth keeping in an aggregate: the heatmap window plus a
 # fortnight, as the Worker's nightly rebuild does (AGG_DAY_KEEP_DAYS).
@@ -126,19 +131,59 @@ def _int(value):
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
 
 
-def merge(aggregates):
+def _validate_aggregate(agg, now):
+    """Validate a whole machine file before any of its values reach rendering."""
+    if not isinstance(agg, dict) or type(agg.get("format")) is not int or agg["format"] != AGGREGATE_FORMAT:
+        raise ValueError("unsupported format")
+    for key in ("first_ts", "updated_at"):
+        value = agg.get(key)
+        if key == "first_ts" and value is None:
+            continue
+        if type(value) is not int or not MIN_TIMESTAMP <= value <= now + 86400:
+            raise ValueError(f"invalid {key}")
+    for key in ("bytes", "events", "repo_count"):
+        value = agg.get(key)
+        if type(value) is not int or not 0 <= value <= 2**63 - 1:
+            raise ValueError(f"invalid {key}")
+    for key in ("languages", "event_types", "days"):
+        table = agg.get(key)
+        if not isinstance(table, dict):
+            raise ValueError(f"invalid {key}")
+        for name, value in table.items():
+            if type(value) is not int or not 0 <= value <= 2**63 - 1:
+                raise ValueError(f"invalid {key} count")
+            if not isinstance(name, str):
+                raise ValueError(f"invalid {key} name")
+            if key == "languages" and not LANGUAGE_RE.fullmatch(name):
+                raise ValueError("invalid language name")
+            if key == "event_types" and name not in ("edit", "write", "diff", "commit"):
+                raise ValueError("invalid event type")
+            if key == "days":
+                try:
+                    valid_day = date.fromisoformat(name).isoformat() == name
+                except ValueError:
+                    valid_day = False
+                if not valid_day:
+                    raise ValueError("invalid day")
+
+
+def merge(aggregates, now=None):
     """Sum per-machine aggregates into one.
 
     Counts add up. `repo_count` does not: every machine reads the same GitHub
     account's total, so adding them would multiply it — the largest wins.
-    `first_ts` is the earliest, `updated_at` the latest. A value of the wrong
-    shape is skipped rather than trusted, since these files come back from a
+    `first_ts` is the earliest, `updated_at` the latest. A malformed file is
+    skipped with a warning rather than trusted, since these files come back from a
     repository anyone with push access could edit.
     """
+    now = int(time.time() if now is None else now)
     out = {"languages": {}, "event_types": {}, "days": {}, "bytes": 0, "events": 0,
            "first_ts": None, "repo_count": 0, "updated_at": 0}
     for agg in aggregates:
-        if not isinstance(agg, dict) or agg.get("format") != AGGREGATE_FORMAT:
+        try:
+            _validate_aggregate(agg, now)
+        except ValueError as exc:
+            warnings.warn(f"Skipping invalid machine aggregate: {exc}", RuntimeWarning, stacklevel=2)
             continue
         for key in ("languages", "event_types", "days"):
             table = agg.get(key)

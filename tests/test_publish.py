@@ -5,6 +5,7 @@ import os
 import socket
 import time
 import unittest
+import xml.etree.ElementTree as ET
 from unittest import mock
 
 from devcard import config, publish
@@ -50,6 +51,63 @@ class RenderTest(TempDirTest):
         self.assertIn(".bg{fill:#0f1117}", dark)
 
 
+class BranchGuardTest(TempDirTest):
+    """Exercise the publish guard without unrelated SQLite or git subprocesses."""
+
+    def attempt(self, names, *, default=False, parent=False, marker=b'{"format": 1}', mode=b"100644"):
+        repo = publish._Repo(self.tmp, "local")
+
+        def git_output(*args, **kwargs):
+            if args[0] == "ls-remote":
+                body = f"ref: {publish.REF}\tHEAD\n".encode() if default else b""
+            elif args[:2] == ("cat-file", "-p"):
+                body = b"tree " + b"a" * 40 + (b"\nparent " + b"b" * 40 if parent else b"") + b"\n\nmessage"
+            elif args[0] == "ls-tree":
+                body = b"".join(mode + b" blob " + b"a" * 40 + b"\t" + name.encode() + b"\0" for name in names)
+            elif args[:2] == ("cat-file", "blob") and args[2].endswith(":.devcard"):
+                body = marker
+            else:
+                self.fail(f"unexpected git fixture command: {args}")
+            return mock.Mock(stdout=body, stderr=b"", returncode=0)
+
+        repo.git = mock.Mock(side_effect=git_output)
+        repo.ensure = mock.Mock()
+        repo.fetch_head = mock.Mock(return_value="head")
+        repo.machine_files = mock.Mock(return_value={})
+        repo.write_tree = mock.Mock(return_value="tree")
+        repo.tree_of = mock.Mock(return_value="old-tree")
+        repo.commit = mock.Mock(return_value="new-head")
+        repo.push = mock.Mock(return_value=(True, ""))
+        aggregate = {"format": 1, "languages": {}, "event_types": {}, "days": {},
+                     "bytes": 0, "events": 0, "first_ts": None, "repo_count": 0, "updated_at": NOW}
+        with Home(self.tmp, "a"), mock.patch.object(publish, "_Repo", return_value=repo), \
+                mock.patch.object(publish, "local_aggregate", return_value=aggregate), \
+                mock.patch.object(lib, "source_id", return_value="test-machine"):
+            with self.assertRaises(publish.PublishError):
+                run(cfg_for("local"), force=True)
+        repo.write_tree.assert_not_called()
+        repo.commit.assert_not_called()
+        repo.push.assert_not_called()
+
+    def test_unmarked_branch_never_reaches_a_write(self):
+        self.attempt(["card.svg", "card-dark.svg"])
+
+    def test_foreign_files_never_reach_a_write(self):
+        self.attempt([".devcard", "card.svg", "card-dark.svg", "important.txt"])
+
+    def test_default_branch_never_reaches_a_write(self):
+        self.attempt([".devcard", "card.svg", "card-dark.svg"], default=True)
+
+    def test_foreign_history_never_reaches_a_write(self):
+        self.attempt([".devcard", "card.svg", "card-dark.svg"], parent=True)
+
+    def test_symlinks_never_reach_a_write(self):
+        self.attempt([".devcard", "card.svg", "card-dark.svg"], mode=b"120000")
+
+    def test_invalid_marker_never_reaches_a_write(self):
+        self.attempt([".devcard", "card.svg", "card-dark.svg"], marker=b'{"format": true}')
+
+
 class PublishTest(TempDirTest):
     def setUp(self):
         super().setUp()
@@ -61,12 +119,95 @@ class PublishTest(TempDirTest):
     def show(self, name):
         return git(self.remote, "show", f"{publish.BRANCH}:{name}")
 
+    def seed(self, files, parent=None):
+        repo = publish._Repo(os.path.join(self.tmp, "seed.git"), self.remote)
+        repo.ensure()
+        tree = repo.write_tree(files)
+        if parent:
+            repo.git("fetch", "-q", "origin", publish.REF)
+            commit = repo.out("commit-tree", tree, "-p", parent, "-m", "test",
+                              env=publish.AUTHOR_ENV)
+        else:
+            commit = repo.commit(tree, NOW)
+        ok, detail = repo.push(commit, parent)
+        self.assertTrue(ok, detail)
+        return commit
+
+    def owned_files(self):
+        return {".devcard": b'{"format": 1}\n', "card.svg": b"<svg/>", "card-dark.svg": b"<svg/>"}
+
+    def test_refuses_an_unmarked_existing_branch(self):
+        head = self.seed({"card.svg": b"someone else's card"})
+        with Home(self.tmp, "a"), self.assertRaisesRegex(publish.PublishError, "not owned by devcard"):
+            run(cfg_for(self.remote), force=True)
+        self.assertEqual(git(self.remote, "rev-parse", publish.BRANCH), head)
+
+    def test_refuses_foreign_files_even_with_a_marker(self):
+        head = self.seed({**self.owned_files(), "important.txt": b"keep me"})
+        with Home(self.tmp, "a"), self.assertRaisesRegex(publish.PublishError, "not owned by devcard"):
+            run(cfg_for(self.remote), force=True)
+        self.assertEqual(git(self.remote, "rev-parse", publish.BRANCH), head)
+
+    def test_refuses_an_unsupported_marker_version(self):
+        head = self.seed({**self.owned_files(), ".devcard": b'{"format": 99}\n'})
+        with Home(self.tmp, "a"), self.assertRaisesRegex(publish.PublishError, "not owned by devcard"):
+            run(cfg_for(self.remote), force=True)
+        self.assertEqual(git(self.remote, "rev-parse", publish.BRANCH), head)
+
+    def test_refuses_the_default_branch_even_when_owned(self):
+        head = self.seed(self.owned_files())
+        git(self.remote, "symbolic-ref", "HEAD", publish.REF)
+        with Home(self.tmp, "a"), self.assertRaisesRegex(publish.PublishError, "default branch"):
+            run(cfg_for(self.remote), force=True)
+        self.assertEqual(git(self.remote, "rev-parse", publish.BRANCH), head)
+
+    def test_refuses_to_erase_foreign_history_under_an_owned_tip(self):
+        parent = self.seed({"important.txt": b"history must survive"})
+        head = self.seed(self.owned_files(), parent=parent)
+        with Home(self.tmp, "a"), self.assertRaisesRegex(publish.PublishError, "root commit"):
+            run(cfg_for(self.remote), force=True)
+        self.assertEqual(git(self.remote, "rev-parse", publish.BRANCH), head)
+
+    def test_debounce_rereads_state_after_taking_the_lock(self):
+        real_enter = publish._Lock.__enter__
+
+        def racing_enter(lock):
+            publish._write_json(config.state_path(), {"last_check": NOW, "last_push": NOW - 1})
+            return real_enter(lock)
+
+        with Home(self.tmp, "a"), mock.patch.object(publish._Lock, "__enter__", racing_enter), \
+                mock.patch.object(publish, "local_aggregate") as aggregate:
+            self.assertEqual(run(cfg_for(self.remote)), "skipped")
+            aggregate.assert_not_called()
+            self.assertEqual(publish._read_json(config.state_path())["last_push"], NOW - 1)
+
+    def test_invalid_remote_files_warn_and_do_not_break_rendering(self):
+        files = self.owned_files()
+        valid = {"format": 1, "languages": {"Rust": 5}, "event_types": {}, "days": {},
+                 "bytes": 0, "events": 1, "first_ts": NOW, "repo_count": 1, "updated_at": NOW}
+        files["machines/good.json"] = json.dumps(valid).encode()
+        files["machines/future.json"] = json.dumps({**valid, "first_ts": 10**100}).encode()
+        files["machines/control.json"] = json.dumps({**valid, "languages": {"bad\u0001": 999}}).encode()
+        files["machines/broken.json"] = b"{"
+        self.seed(files)
+        with Home(self.tmp, "a") as home:
+            home.add_events([edit(NOW - 60, "Python", 7)])
+            with self.assertWarnsRegex(RuntimeWarning, "aggregate"):
+                self.assertEqual(run(cfg_for(self.remote), force=True), "published")
+        svg = self.show("card.svg")
+        ET.fromstring(svg)
+        self.assertIn(">12<", svg)
+        for name, body in files.items():
+            if name.startswith("machines/"):
+                self.assertEqual(self.show(name), body.decode())
+
     def test_first_publish_creates_the_orphan_branch(self):
         with Home(self.tmp, "a") as home:
             home.add_events([edit(NOW - 60, "Python", 40)])
             self.assertEqual(run(cfg_for(self.remote), force=True), "published")
             machine = lib.read_source_id()
-        self.assertEqual(self.tree(), ["README.md", "card-dark.svg", "card.svg", f"machines/{machine}.json"])
+        self.assertEqual(self.tree(), [".devcard", "README.md", "card-dark.svg", "card.svg", f"machines/{machine}.json"])
+        self.assertEqual(json.loads(self.show(".devcard")), {"format": 1})
         # One root commit, made under devcard's own identity — never user@hostname.
         self.assertEqual(git(self.remote, "rev-list", "--count", publish.BRANCH), "1")
         self.assertEqual(git(self.remote, "log", "-1", "--format=%P", publish.BRANCH), "")
@@ -112,6 +253,23 @@ class PublishTest(TempDirTest):
             self.assertEqual(run(cfg, now=NOW + 3600), "unchanged")
         self.assertEqual(json.loads(self.show(f"machines/{machine}.json"))["updated_at"], NOW)
 
+    def test_invalid_previous_timestamp_is_replaced_instead_of_reused(self):
+        with Home(self.tmp, "a") as home:
+            home.add_events([edit(NOW - 60, "Python", 7)])
+            run(cfg_for(self.remote), force=True)
+            machine = lib.read_source_id()
+            old = json.loads(self.show(f"machines/{machine}.json"))
+            head = git(self.remote, "rev-parse", publish.BRANCH)
+            repo = publish._Repo(os.path.join(config.publish_dir(), "octo-cat__octo-cat"), self.remote)
+            files = {name: repo.git("cat-file", "blob", f"{head}:{name}").stdout for name in self.tree()}
+            files[f"machines/{machine}.json"] = json.dumps({**old, "updated_at": 10**100}).encode()
+            ok, detail = repo.push(repo.commit(repo.write_tree(files), NOW), head)
+            self.assertTrue(ok, detail)
+            with self.assertWarnsRegex(RuntimeWarning, "aggregate"):
+                self.assertEqual(run(cfg_for(self.remote), now=NOW + 60, force=True), "published")
+        self.assertEqual(json.loads(self.show(f"machines/{machine}.json"))["updated_at"], NOW + 60)
+        ET.fromstring(self.show("card.svg"))
+
     def test_machine_file_holds_aggregates_only(self):
         with Home(self.tmp, "a") as home:
             home.add_events([
@@ -141,7 +299,7 @@ class PublishTest(TempDirTest):
             self.assertEqual(run(cfg_for(self.remote), now=NOW + 10, force=True), "published")
             desktop_id = lib.read_source_id()
         self.assertNotEqual(laptop_id, desktop_id)
-        self.assertEqual(self.tree(), sorted(["README.md", "card-dark.svg", "card.svg",
+        self.assertEqual(self.tree(), sorted([".devcard", "README.md", "card-dark.svg", "card.svg",
                                               f"machines/{laptop_id}.json", f"machines/{desktop_id}.json"]))
         card = self.show("card.svg")
         self.assertIn(">151<", card)
@@ -197,6 +355,98 @@ class PublishTest(TempDirTest):
         with Home(self.tmp, "a"):
             with self.assertRaises(publish.PublishError):
                 publish.publish({**config.DEFAULTS}, now=NOW, force=True)
+
+
+class RemoteValidationTest(TempDirTest):
+    def test_deep_json_and_invalid_timestamps_do_not_break_the_card(self):
+        aggregate = {"format": 1, "languages": {"Python": 7}, "event_types": {}, "days": {},
+                     "bytes": 0, "events": 1, "first_ts": NOW, "repo_count": 0, "updated_at": NOW}
+        repo = mock.Mock()
+        repo.fetch_head.return_value = "head"
+        repo.machine_files.return_value = {
+            "machines/deep.json": b"[" * 2000 + b"]" * 2000,
+            "machines/future.json": json.dumps({**aggregate, "first_ts": 10**100}).encode(),
+        }
+        repo.write_tree.return_value = "tree"
+        repo.tree_of.return_value = None
+        repo.push.return_value = (True, "")
+        with Home(self.tmp, "a"), mock.patch.object(publish, "_Repo", return_value=repo), \
+                mock.patch.object(publish, "local_aggregate", return_value=aggregate), \
+                mock.patch.object(lib, "source_id", return_value="test-machine"), \
+                self.assertWarnsRegex(RuntimeWarning, "aggregate"):
+            self.assertEqual(run(cfg_for("local"), force=True), "published")
+        files = repo.write_tree.call_args.args[0]
+        ET.fromstring(files["card.svg"])
+        self.assertIn(b">7<", files["card.svg"])
+        self.assertEqual(files["machines/deep.json"], b"[" * 2000 + b"]" * 2000)
+
+
+class DebounceRaceTest(TempDirTest):
+    def test_completed_publish_between_read_and_lock_is_skipped(self):
+        real_enter = publish._Lock.__enter__
+
+        def raced_enter(lock):
+            publish._write_json(config.state_path(), {"last_check": NOW, "last_push": NOW - 1})
+            return real_enter(lock)
+
+        repo = mock.Mock()
+        repo.fetch_head.return_value = None
+        repo.machine_files.return_value = {}
+        repo.write_tree.return_value = "tree"
+        repo.tree_of.return_value = None
+        repo.push.return_value = (True, "")
+        aggregate = {"format": 1, "languages": {}, "event_types": {}, "days": {}, "bytes": 0,
+                     "events": 0, "first_ts": None, "repo_count": 0, "updated_at": NOW}
+        with Home(self.tmp, "a"), mock.patch.object(publish._Lock, "__enter__", raced_enter), \
+                mock.patch.object(publish, "local_aggregate", return_value=aggregate) as aggregate_fn, \
+                mock.patch.object(publish, "_Repo", return_value=repo), \
+                mock.patch.object(lib, "source_id", return_value="test-machine"):
+            self.assertEqual(run(cfg_for("local")), "skipped")
+            aggregate_fn.assert_not_called()
+            self.assertEqual(publish._read_json(config.state_path())["last_push"], NOW - 1)
+
+
+class GitIsolationTest(TempDirTest):
+    def test_publisher_ignores_global_system_config_hooks_and_signing(self):
+        remote = self.bare_remote()
+        hooks = os.path.join(self.tmp, "hostile-hooks")
+        os.makedirs(hooks)
+        sentinel = os.path.join(self.tmp, "hook-ran").replace("\\", "/")
+        hook = os.path.join(hooks, "pre-push")
+        with open(hook, "w", encoding="utf-8", newline="\n") as f:
+            f.write(f'#!/bin/sh\nprintf invoked > "{sentinel}"\nexit 1\n')
+        os.chmod(hook, 0o755)
+        global_config = os.path.join(self.tmp, ".gitconfig")
+        system_config = os.path.join(self.tmp, "system.gitconfig")
+        with open(global_config, "w", encoding="utf-8") as f:
+            f.write(f'[core]\n hooksPath = "{hooks.replace(chr(92), "/")}"\n'
+                    '[commit]\n gpgSign = true\n[gpg]\n program = nonexistent-devcard-signer\n'
+                    '[devcard]\n globalSentinel = inherited\n')
+        with open(system_config, "w", encoding="utf-8") as f:
+            f.write('[devcard]\n systemSentinel = inherited\n')
+        env = {"GIT_CONFIG_GLOBAL": global_config, "GIT_CONFIG_SYSTEM": system_config,
+               "GIT_CONFIG_NOSYSTEM": "0", "GIT_CONFIG_COUNT": "1",
+               "GIT_CONFIG_KEY_0": "devcard.injectedSentinel", "GIT_CONFIG_VALUE_0": "inherited",
+               "HOME": self.tmp, "USERPROFILE": self.tmp,
+               "XDG_CONFIG_HOME": os.path.join(self.tmp, ".config")}
+        with Home(self.tmp, "a") as home, mock.patch.dict(os.environ, env):
+            home.add_events([edit(NOW - 60)])
+            self.assertEqual(run(cfg_for(remote), force=True), "published")
+            repo = publish._Repo(os.path.join(config.publish_dir(), "octo-cat__octo-cat"), remote)
+            for key in ("devcard.globalSentinel", "devcard.systemSentinel", "devcard.injectedSentinel"):
+                self.assertNotEqual(repo.git("config", "--get", key, check=False).returncode, 0)
+            self.assertEqual(repo.out("config", "--get", "commit.gpgSign"), "false")
+        self.assertFalse(os.path.exists(sentinel))
+
+    def test_git_subprocess_explicitly_disables_external_configuration(self):
+        repo = publish._Repo(self.tmp, "local")
+        proc = mock.Mock(returncode=0, stdout=b"", stderr=b"")
+        with mock.patch.object(publish.subprocess, "run", return_value=proc) as execute:
+            repo.git("status")
+        env = execute.call_args.kwargs["env"]
+        self.assertEqual(env.get("GIT_CONFIG_NOSYSTEM"), "1")
+        self.assertEqual(env.get("GIT_CONFIG_GLOBAL"), os.devnull)
+        self.assertEqual(env.get("GIT_TERMINAL_PROMPT"), "0")
 
 
 class HookIntegrationTest(TempDirTest):

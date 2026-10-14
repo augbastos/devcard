@@ -33,15 +33,17 @@ hook ─> ~/.claude/devcard/events.db                      README.md
 
 ### How fresh the card is
 
-Honestly: **about 15 minutes, plus GitHub's image caching**. The legacy Worker
+Honestly: **up to about 20 minutes: 15 minutes between publishes plus 5 minutes
+of raw file caching**. The legacy Worker
 card was live within about half a minute; this one is not.
 
 1. Up to 15 minutes between publishes (the debounce above). Nothing publishes
    while you are not coding: the trigger is the hook, not a timer.
 2. `raw.githubusercontent.com` serves the files with `Cache-Control:
    max-age=300`, so up to 5 more minutes there.
-3. GitHub renders README images through its image proxy (camo), which keeps its
-   own cache. In practice that adds minutes; GitHub does not promise a bound.
+
+SVGs served by `raw.githubusercontent.com` are not proxied through GitHub's
+image proxy (camo), so there is no additional proxy cache in this path.
 
 The card states its own date ("updated 2025-10-09") rather than "5min ago",
 because a static file cannot keep a relative time true.
@@ -67,6 +69,7 @@ On the branch `devcard-data` of the repository you chose:
 | `card.svg`, `card-dark.svg` | The card, merged across every machine, for light and dark GitHub themes |
 | `machines/<id>.json` | One file per machine, written only by that machine |
 | `README.md` | A note that the branch is generated |
+| `.devcard` | Ownership marker with format version 1 |
 
 ## Several machines
 
@@ -82,8 +85,9 @@ redone on top of the winner's commit (up to three times).
 
 A machine whose `events.db` is deleted gets a new id; its old file stays on the
 branch, so the work it recorded keeps counting. To drop a machine's numbers,
-delete its file from the branch (it will not come back unless that machine
-publishes again).
+remove its file while retaining a single root commit and the `.devcard` marker.
+An ordinary edit that adds a parent commit is refused on the next publish.
+The file will not come back unless that machine publishes again.
 
 Days are computed in each machine's own timezone (or `timezone` in its
 `config.json`). Two machines in different zones may disagree about which day a
@@ -98,6 +102,11 @@ is not a record of anything. Commits are authored as
 `devcard <devcard@devcard.invalid>`, never with your git identity, so no
 `user@hostname` default can end up in a public repository.
 
+An existing branch is accepted only with the `.devcard` format marker, the
+generated card layout and a single root commit. A branch containing unrelated
+files or history is refused, as is the repository's default branch. An older
+unmarked branch is refused too; it is never taken over automatically.
+
 Because each publish is a force-push, a branch protection rule or ruleset that
 blocks force-pushes on `devcard-data` will make publishing fail. Leave that one
 branch unprotected (or pick a repository where it is).
@@ -106,7 +115,9 @@ branch unprotected (or pick a repository where it is).
 
 Over HTTPS, publishing uses `gh`'s login: the credential helper `gh auth
 git-credential` is passed to git for each command, which is what `gh auth
-setup-git` would write into your global config — without touching it. Run
+setup-git` would write into your global config — without touching it. The
+publisher ignores global and system git configuration, disables hooks and
+commit signing, and passes only this credential helper explicitly. Run
 `gh auth login` once. With `--remote <url>` (or `remote` in `config.json`) you
 can push over SSH or to any URL your own git credentials reach instead.
 

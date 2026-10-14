@@ -113,10 +113,6 @@ class Init:
         if mode not in ("claude", "git"):
             self.die("pick 1 (claude) or 2 (git)")
 
-        os.makedirs(os.path.dirname(MODE_PATH), exist_ok=True)
-        with open(MODE_PATH, "w", encoding="utf-8") as f:
-            f.write(mode)
-
         if mode == "claude":
             # Beside devcard_lib, wherever _hook found it (site-packages or hook/).
             from install_claude_hook import register_claude_hook
@@ -133,6 +129,29 @@ class Init:
         else:
             import install_git_hook
 
+            # Git hooks already no-op in Claude mode. Remove the Claude entry
+            # here, so changing to git mode cannot leave both capturers active.
+            if os.path.exists(SETTINGS_PATH):
+                import json
+                from install_claude_hook import write_atomic
+
+                try:
+                    with open(SETTINGS_PATH, encoding="utf-8") as f:
+                        settings = json.load(f)
+                    post = settings.get("hooks", {}).get("PostToolUse", [])
+                    kept = []
+                    for entry in post:
+                        hooks = [h for h in entry.get("hooks", [])
+                                 if "devcard_capture" not in str(h.get("command", ""))]
+                        if hooks or not entry.get("hooks"):
+                            kept.append({**entry, "hooks": hooks})
+                    if kept != post:
+                        settings["hooks"]["PostToolUse"] = kept
+                        write_atomic(SETTINGS_PATH, json.dumps(settings, indent=2) + "\n")
+                        self.out("  Claude Code capture hook removed (restart Claude Code to activate it)")
+                except (OSError, ValueError, AttributeError, TypeError) as exc:
+                    self.die(f"could not update {SETTINGS_PATH}: {exc}")
+
             folders = list(self.args.git_folder or [])
             if not folders and not self.args.yes:
                 self.out("  Folders to look for git repositories in (one per line, blank to finish):")
@@ -145,6 +164,9 @@ class Init:
                 install_git_hook.main(folders)
             else:
                 self.out("  No folders given. Later: devcard init --mode git --git-folder <folder>")
+        os.makedirs(os.path.dirname(MODE_PATH), exist_ok=True)
+        with open(MODE_PATH, "w", encoding="utf-8") as f:
+            f.write(mode)
         return mode
 
     def main(self):
@@ -291,6 +313,12 @@ def build_parser():
 
     p = sub.add_parser("status", help="show the configuration and the README embed")
     p.set_defaults(func=cmd_status)
+
+    from .serve import DEFAULT_PORT, cmd_serve
+
+    p = sub.add_parser("serve", help="open a read-only dashboard on localhost")
+    p.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"local port (default: {DEFAULT_PORT})")
+    p.set_defaults(func=cmd_serve)
     return parser
 
 

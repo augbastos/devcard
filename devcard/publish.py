@@ -19,9 +19,11 @@ carry `user@hostname`, and the card's privacy promise covers machine names too.
 import base64
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
+import warnings
 
 from . import config, data
 from ._hook import lib
@@ -37,6 +39,8 @@ PUSH_ATTEMPTS = 3
 AVATAR_TTL = 86400
 AVATAR_FAILURE_TTL = 3600
 AVATAR_MAX_BYTES = 256 * 1024
+BRANCH_MARKER = b'{"format": 1}\n'
+MACHINE_PATH_RE = re.compile(r"machines/[A-Za-z0-9_-]{1,64}\.json\Z")
 
 # What git exports to a hook so that commands find *that* repository
 # (`git rev-parse --local-env-vars`, plus the -c passthrough). Inherited by a
@@ -108,9 +112,12 @@ class _Repo:
                 if k not in REPO_ENV_VARS and not k.startswith("GIT_CONFIG_")}
         # Publishing runs in the background: a credential prompt would hang there.
         base["GIT_TERMINAL_PROMPT"] = "0"
+        base["GIT_CONFIG_NOSYSTEM"] = "1"
+        base["GIT_CONFIG_GLOBAL"] = os.devnull
         try:
             proc = subprocess.run(
-                ["git", *self.cred, "-C", self.path, *args],
+                ["git", "-c", "core.hooksPath=", "-c", "commit.gpgSign=false",
+                 "-c", "tag.gpgSign=false", *self.cred, "-C", self.path, *args],
                 input=stdin, capture_output=True, env={**base, **(env or {})},
                 timeout=120,
             )
@@ -155,6 +162,43 @@ class _Repo:
 
     def tree_of(self, commit):
         return None if commit is None else self.out("rev-parse", f"{commit}^{{tree}}")
+
+    def validate_target(self, commit):
+        """Refuse default branches, unmarked trees and history we cannot replace."""
+        head = self.out("ls-remote", "--symref", "origin", "HEAD")
+        if f"ref: {REF}\tHEAD" in head.splitlines():
+            raise PublishError(f"refusing to publish: {BRANCH} is the repository's default branch")
+        if commit is None:
+            return
+
+        # Inspect the raw commit: shallow fetches hide parents from rev-list.
+        headers = self.out("cat-file", "-p", commit).split("\n\n", 1)[0].splitlines()
+        if any(line.startswith("parent ") for line in headers):
+            raise PublishError(f"refusing to publish: {BRANCH} must contain a single root commit")
+
+        entries = self.git("ls-tree", "-r", "-z", commit).stdout.split(b"\0")
+        names = set()
+        for entry in filter(None, entries):
+            meta, name = entry.split(b"\t", 1)
+            mode, kind, _oid = meta.split()
+            name = name.decode("utf-8", "replace")
+            if (mode != b"100644" or kind != b"blob"
+                    or (name not in (".devcard", "README.md", "card.svg", "card-dark.svg")
+                        and not MACHINE_PATH_RE.fullmatch(name))):
+                raise PublishError(f"refusing to publish: {BRANCH} is not owned by devcard (unexpected layout)")
+            names.add(name)
+        if not {".devcard", "card.svg", "card-dark.svg"} <= names:
+            raise PublishError(f"refusing to publish: {BRANCH} is not owned by devcard (missing marker or cards)")
+        try:
+            marker = json.loads(self.git("cat-file", "blob", f"{commit}:.devcard").stdout)
+            valid = (isinstance(marker, dict) and set(marker) == {"format"}
+                     and type(marker["format"]) is int and marker["format"] == 1)
+        except ValueError:
+            valid = False
+        if not valid:
+            raise PublishError(f"refusing to publish: {BRANCH} is not owned by devcard (unsupported marker)")
+        if "README.md" in names and self.git("cat-file", "blob", f"{commit}:README.md").stdout != BRANCH_README.encode("utf-8"):
+            raise PublishError(f"refusing to publish: {BRANCH} is not owned by devcard (foreign README)")
 
     def write_tree(self, files):
         index = os.path.join(self.path, "devcard-index")
@@ -277,7 +321,7 @@ def local_aggregate(cfg, now, repo_count_fn=None):
 def render_files(cfg, aggregates, now, avatar=None):
     """{name: bytes} for the two card files, from any number of machine aggregates."""
     card = data.card_data(
-        data.merge(aggregates), cfg["github_user"], now, locale=cfg["lang"],
+        data.merge(aggregates, now=now), cfg["github_user"], now, locale=cfg["lang"],
         tz=cfg.get("timezone") or None, avatar=avatar,
         badges=[b for b in cfg.get("badges") or [] if isinstance(b, dict) and "label" in b],
         pins=[{"repo": p["repo"], "note": p.get("note"), "stars": None}
@@ -332,6 +376,9 @@ def publish(cfg, now=None, force=False, repo_count_fn=None, avatar_fn=None):
     with _Lock(config.lock_path()) as lock:
         if not lock.held:
             return "skipped"
+        state = _read_json(config.state_path())
+        if not force and 0 <= now - state.get("last_check", 0) < MIN_INTERVAL:
+            return "skipped"
         state["last_check"] = now
         _write_json(config.state_path(), state)
 
@@ -350,24 +397,28 @@ def publish(cfg, now=None, force=False, repo_count_fn=None, avatar_fn=None):
         detail = ""
         for _ in range(PUSH_ATTEMPTS):
             head = repo.fetch_head()
+            repo.validate_target(head)
             files = repo.machine_files(head)
             previous = files.get(own)
             if previous:
                 try:
                     old = json.loads(previous)
-                    if isinstance(old, dict) and _same_except_time(old, agg):
+                    data._validate_aggregate(old, now)
+                    if _same_except_time(old, agg):
                         agg["updated_at"] = old.get("updated_at", agg["updated_at"])
-                except ValueError:
-                    pass
+                except (ValueError, RecursionError):
+                    warnings.warn("Skipping invalid machine aggregate: previous local file", RuntimeWarning, stacklevel=2)
             files[own] = encode_aggregate(agg)
             aggregates = []
             for body in files.values():
                 try:
                     aggregates.append(json.loads(body))
-                except ValueError:
+                except (ValueError, RecursionError):
+                    warnings.warn("Skipping invalid machine aggregate: malformed JSON", RuntimeWarning, stacklevel=2)
                     continue  # one damaged file must not take the card down
             files.update(render_files(cfg, aggregates, now, avatar))
             files["README.md"] = BRANCH_README.encode("utf-8")
+            files[".devcard"] = BRANCH_MARKER
 
             tree = repo.write_tree(files)
             if tree == repo.tree_of(head):

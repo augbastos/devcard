@@ -35,6 +35,41 @@ def init(argv, answers=()):
 
 
 class InitTest(TempDirTest):
+    def capture(self, mode):
+        args = cli.build_parser().parse_args(["init", "--yes", "--mode", mode])
+        return cli.Init(args, out=lambda _line: None).capture()
+
+    def test_switch_claude_to_git_removes_only_the_claude_capture_hook(self):
+        with Home(self.tmp, "a"):
+            other = {"matcher": "Edit", "hooks": [{"type": "command", "command": "other-hook"}]}
+            with open(cli.SETTINGS_PATH, "w", encoding="utf-8") as f:
+                json.dump({"hooks": {"PostToolUse": [other]}, "other-setting": True}, f)
+            self.capture("claude")
+            self.capture("git")
+            with open(cli.SETTINGS_PATH, encoding="utf-8") as f:
+                settings = json.load(f)
+            self.assertEqual(settings["hooks"]["PostToolUse"], [other])
+            self.assertTrue(settings["other-setting"])
+
+    def test_switch_git_to_claude_reactivates_one_capture_hook_and_silences_git(self):
+        import devcard_git_hook as githook
+
+        with Home(self.tmp, "a"), mock.patch.object(githook, "MODE_PATH", cli.MODE_PATH):
+            # Round trip: the old Claude entry must be removed, then installed once.
+            self.capture("claude")
+            self.capture("git")
+            with open(cli.SETTINGS_PATH, encoding="utf-8") as f:
+                self.assertNotIn("devcard_capture", f.read())
+            self.capture("claude")
+            self.assertEqual(githook.capture_mode(), "claude")
+            with mock.patch.object(githook.lib, "init_db") as db:
+                githook.main()
+                db.assert_not_called()
+            with open(cli.SETTINGS_PATH, encoding="utf-8") as f:
+                settings = json.load(f)
+            commands = [h["command"] for e in settings["hooks"]["PostToolUse"] for h in e["hooks"]]
+            self.assertEqual(sum("devcard_capture" in c for c in commands), 1)
+
     def test_claude_mode_end_to_end(self):
         remote = self.bare_remote()
         with Home(self.tmp, "a") as home:
@@ -104,6 +139,19 @@ class CommandsTest(TempDirTest):
         with Home(self.tmp, "a"), contextlib.redirect_stdout(io.StringIO()) as buf:
             self.assertEqual(cli.main(["publish", "--force"]), 1)
         self.assertIn("devcard init", buf.getvalue())
+
+
+class DocumentationTest(unittest.TestCase):
+    def test_serverless_freshness_uses_publish_cadence_and_raw_cache_only(self):
+        for name in ("serverless.md", "limitations.md"):
+            with self.subTest(name=name), open(os.path.join(ROOT, "docs", name), encoding="utf-8") as f:
+                text = f.read()
+                self.assertIn("15 minutes", text)
+                self.assertIn("5 minutes", text)
+                self.assertIn("max-age=300", text)
+                self.assertNotIn("however long GitHub's image proxy", text)
+                self.assertNotIn("renders README images through its image proxy", text)
+                self.assertIn("not proxied", text)
 
 
 class VersionFloorTest(unittest.TestCase):

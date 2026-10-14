@@ -1,6 +1,7 @@
 """Aggregates: what one machine publishes, and how several add up."""
 import json
 import os
+import time
 import unittest
 
 from devcard import data
@@ -13,7 +14,7 @@ NOW = 1760000000  # 2025-10-09T08:53:20Z
 
 def agg(**overrides):
     base = {"format": 1, "languages": {}, "event_types": {}, "days": {}, "bytes": 0, "events": 0,
-            "first_ts": None, "repo_count": 0, "updated_at": 0}
+            "first_ts": None, "repo_count": 0, "updated_at": NOW}
     return {**base, **overrides}
 
 
@@ -62,19 +63,41 @@ class AggregateTest(TempDirTest):
 
 
 class MergeTest(unittest.TestCase):
+    def test_out_of_range_or_non_integer_timestamps_skip_the_whole_file(self):
+        for key in ("first_ts", "updated_at"):
+            for value in (10**100, int(time.time()) + 86401, 1577836799, True, "now", 1.5):
+                with self.subTest(key=key, value=value), self.assertWarnsRegex(RuntimeWarning, "aggregate"):
+                    merged = data.merge([agg(languages={"Rust": 900}, **{key: value}),
+                                         agg(languages={"Python": 3}, updated_at=NOW)])
+                    self.assertEqual(merged["languages"], {"Python": 3})
+
+    def test_invalid_language_names_skip_the_whole_file(self):
+        for name in ("bad\u0000", "bad\u0001", "bad\ud800", "bad\ufffe", "<script>", "x" * 33, ""):
+            with self.subTest(name=repr(name)), self.assertWarnsRegex(RuntimeWarning, "aggregate"):
+                merged = data.merge([agg(languages={name: 100, "Rust": 900}),
+                                     agg(languages={"Python": 3}, updated_at=NOW)])
+                self.assertEqual(merged["languages"], {"Python": 3})
+
+    def test_valid_language_charset_and_timestamp_boundaries_render(self):
+        languages = {name: 1 for name in ("C++", "C#", "Objective-C", "Visual Basic .NET", "F#", "L_1")}
+        merged = data.merge([agg(languages=languages, first_ts=1577836800, updated_at=NOW + 86400)], now=NOW)
+        self.assertEqual(merged["languages"], languages)
+        self.assertEqual(merged["first_ts"], 1577836800)
+        data.card_data(merged, "octo-cat", NOW, tz="UTC")
+
     def test_counts_add_and_the_repo_count_does_not(self):
         merged = data.merge([
             agg(languages={"Python": 10}, event_types={"edit": 2}, days={"2025-10-01": 10},
-                bytes=100, events=3, first_ts=500, repo_count=9, updated_at=1000),
+                bytes=100, events=3, first_ts=NOW - 500, repo_count=9, updated_at=NOW - 1000),
             agg(languages={"Python": 1, "Rust": 4}, event_types={"commit": 1}, days={"2025-10-01": 5},
-                bytes=10, events=1, first_ts=300, repo_count=9, updated_at=2000),
+                bytes=10, events=1, first_ts=NOW - 700, repo_count=9, updated_at=NOW - 500),
         ])
         self.assertEqual(merged["languages"], {"Python": 11, "Rust": 4})
         self.assertEqual(merged["event_types"], {"edit": 2, "commit": 1})
         self.assertEqual(merged["days"], {"2025-10-01": 15})
         self.assertEqual((merged["bytes"], merged["events"]), (110, 4))
-        self.assertEqual(merged["first_ts"], 300)
-        self.assertEqual(merged["updated_at"], 2000)
+        self.assertEqual(merged["first_ts"], NOW - 700)
+        self.assertEqual(merged["updated_at"], NOW - 500)
         self.assertEqual(merged["repo_count"], 9)
 
     def test_a_damaged_or_foreign_file_is_skipped(self):
@@ -85,7 +108,7 @@ class MergeTest(unittest.TestCase):
             "not a dict",
             agg(languages={"x" * 40: 5, "Go": -7, "Rust": "12", "C": True}),
         ])
-        self.assertEqual(merged["languages"], {"Python": 3, "Go": 0, "Rust": 0, "C": 0})
+        self.assertEqual(merged["languages"], {"Python": 3})
 
     def test_other_bucket_and_card_numbers(self):
         langs = {f"L{i}": 100 - i for i in range(9)}
