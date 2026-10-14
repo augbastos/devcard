@@ -12,7 +12,7 @@ import re
 import tempfile
 import unittest
 
-from devcard import data, render
+from devcard import config, data, render
 from devcard._hook import lib
 
 GOLDEN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "golden")
@@ -41,7 +41,8 @@ def aggregate_for(name, tmp):
     fixture = GOLDEN["fixtures"][name]
     conn = build_db(os.path.join(tmp, f"{name}.db"), fixture["events"])
     try:
-        agg = data.aggregate(conn, GOLDEN["now"], tz=GOLDEN["timezone"], repo_count=fixture["repo_count"])
+        agg = data.aggregate(conn, GOLDEN["now"], tz=GOLDEN["timezone"], repo_count=fixture["repo_count"],
+                             consent=config.FULL_CONSENT)
     finally:
         conn.close()
     # The Worker stamps updated_at when the repo count arrives; a fixture with

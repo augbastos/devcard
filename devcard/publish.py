@@ -313,11 +313,17 @@ def local_aggregate(cfg, now, repo_count_fn=None):
     conn = lib.init_db()
     try:
         usage.scan_local(cfg, conn)
-        count = (repo_count_fn or lib.repo_count)(conn)
-        card = cfg.get("card") if isinstance(cfg.get("card"), dict) else {}
-        return data.aggregate(conn, now, tz=cfg.get("timezone") or None, repo_count=count or 0,
-                              include_agents=card.get("show_agents") is True,
-                              include_usage=card.get("show_usage") is True)
+        consent = config.consents(cfg)
+        count = None
+        if consent["repo_count"]:
+            count = (repo_count_fn(conn) if repo_count_fn else
+                     lib.repo_count(conn, include_private=consent["repo_count_private"]))
+        agg = data.aggregate(conn, now, tz=cfg.get("timezone") or None, repo_count=count or 0,
+                             consent=consent, repo_count_private=consent["repo_count_private"])
+        if count is None:
+            agg.pop("repo_count", None)
+            agg.pop("repo_count_private", None)
+        return agg
     finally:
         conn.close()
 
@@ -325,7 +331,8 @@ def local_aggregate(cfg, now, repo_count_fn=None):
 def render_files(cfg, aggregates, now, avatar=None):
     """{name: bytes} for the two card files, from any number of machine aggregates."""
     card = data.card_data(
-        data.merge(aggregates, now=now), cfg["github_user"], now, locale=cfg["lang"],
+        data.merge([data.consented(agg, config.consents(cfg)) for agg in aggregates], now=now),
+        cfg["github_user"], now, locale=cfg["lang"],
         tz=cfg.get("timezone") or None, avatar=avatar,
         badges=[b for b in cfg.get("badges") or [] if isinstance(b, dict) and "label" in b],
         pins=[{"repo": p["repo"], "note": p.get("note"), "stars": None}
@@ -373,6 +380,8 @@ def publish(cfg, now=None, force=False, repo_count_fn=None, avatar_fn=None):
     now = int(time.time() if now is None else now)
     if not cfg or not cfg.get("repo") or not cfg.get("github_user"):
         raise PublishError("not configured — run `devcard init` first")
+    if not config.has_consent(cfg):
+        raise PublishError("no publication consent — run `devcard privacy --grant <category>` or `devcard init --consent <categories>`")
 
     state = _read_json(config.state_path())
     if not force and 0 <= now - state.get("last_check", 0) < MIN_INTERVAL:
@@ -381,6 +390,12 @@ def publish(cfg, now=None, force=False, repo_count_fn=None, avatar_fn=None):
     with _Lock(config.lock_path()) as lock:
         if not lock.held:
             return "skipped"
+        saved = config.load()
+        if saved and saved.get("repo") == cfg["repo"] and config.remote_url(saved) == config.remote_url(cfg):
+            current = config.consents(saved)
+            cfg = {**cfg, "consent": {key: value and current[key] for key, value in config.consents(cfg).items()}}
+            if not config.has_consent(cfg):
+                raise PublishError("publication consent was revoked; run `devcard privacy` to review")
         state = _read_json(config.state_path())
         if not force and 0 <= now - state.get("last_check", 0) < MIN_INTERVAL:
             return "skipped"
@@ -404,13 +419,25 @@ def publish(cfg, now=None, force=False, repo_count_fn=None, avatar_fn=None):
             head = repo.fetch_head()
             repo.validate_target(head)
             files = repo.machine_files(head)
+            # A revoke applies to every machine on this account, including old
+            # files. The same allowlist builds local JSON and scrubs carried files.
+            for name, body in list(files.items()):
+                try:
+                    previous_agg = json.loads(body)
+                    data._validate_aggregate(previous_agg, now)
+                    filtered = data.consented(previous_agg, config.consents(cfg))
+                    if filtered != previous_agg:
+                        files[name] = encode_aggregate(filtered)
+                except (ValueError, RecursionError):
+                    warnings.warn("Skipping invalid machine aggregate: malformed or unsupported JSON", RuntimeWarning, stacklevel=2)
+                    del files[name]
             previous = files.get(own)
             if previous:
                 try:
                     old = json.loads(previous)
                     data._validate_aggregate(old, now)
-                    if _same_except_time(old, agg):
-                        agg["updated_at"] = old.get("updated_at", agg["updated_at"])
+                    if _same_except_time(old, agg) and "updated_at" in old and "updated_at" in agg:
+                        agg["updated_at"] = old["updated_at"]
                 except (ValueError, RecursionError):
                     warnings.warn("Skipping invalid machine aggregate: previous local file", RuntimeWarning, stacklevel=2)
             files[own] = encode_aggregate(agg)
@@ -427,10 +454,13 @@ def publish(cfg, now=None, force=False, repo_count_fn=None, avatar_fn=None):
 
             tree = repo.write_tree(files)
             if tree == repo.tree_of(head):
+                state["published_consent"] = config.consents(cfg)
+                _write_json(config.state_path(), state)
                 return "unchanged"
             ok, detail = repo.push(repo.commit(tree, now), head)
             if ok:
                 state["last_push"] = now
+                state["published_consent"] = config.consents(cfg)
                 _write_json(config.state_path(), state)
                 return "published"
         raise PublishError(f"push rejected {PUSH_ATTEMPTS} times ({detail})")
@@ -447,6 +477,9 @@ def auto(spawn=True):
         cfg = config.load()
         if not cfg or not cfg.get("repo"):
             return None
+        if not config.has_consent(cfg):
+            lib.log_consent_notice()
+            return None
         status = publish(cfg)
         if status == "skipped" and spawn:
             _spawn_waiter()
@@ -456,6 +489,30 @@ def auto(spawn=True):
     except Exception as exc:
         lib.log_error(f"devcard publish failed: {exc}")
     return None
+
+
+def unpublish(cfg):
+    """Disable automatic publication and remove only a verified devcard-owned branch."""
+    if not cfg or not cfg.get("repo"):
+        raise PublishError("not configured — run `devcard init` first")
+    cfg = {**cfg, "consent": dict(config.NO_CONSENT)}
+    config.save(cfg)
+    with _Lock(config.lock_path()) as lock:
+        if not lock.held:
+            raise PublishError("publication is busy; retry `devcard unpublish`")
+        repo = _Repo(os.path.join(config.publish_dir(), cfg["repo"].replace("/", "__")), config.remote_url(cfg))
+        repo.ensure()
+        for _ in range(PUSH_ATTEMPTS):
+            head = repo.fetch_head()
+            repo.validate_target(head)
+            if head is None:
+                _write_json(config.state_path(), {})
+                return "already unpublished"
+            ok, detail = repo.push("", head)
+            if ok:
+                _write_json(config.state_path(), {})
+                return "unpublished"
+        raise PublishError(f"could not remove {BRANCH} after {PUSH_ATTEMPTS} attempts ({detail})")
 
 
 def _waiter_fresh(marker):

@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -10,6 +11,21 @@ import devcard_lib as lib
 
 _MODULE_TMP = None
 _PATCHERS = []
+
+
+def without_ancestor_repositories(tmp):
+    """Keep a scratch fixture independent of a checkout used as the temp root."""
+    ancestors = set()
+    directory = os.path.dirname(os.path.abspath(tmp))
+    while True:
+        ancestors.add(os.path.normcase(os.path.join(directory, ".git")))
+        parent = os.path.dirname(directory)
+        if parent == directory:
+            break
+        directory = parent
+    exists = os.path.exists
+    return mock.patch.object(lib.os.path, "exists", side_effect=lambda path:
+                             False if os.path.normcase(os.path.abspath(path)) in ancestors else exists(path))
 
 
 def setUpModule():
@@ -35,6 +51,8 @@ def setUpModule():
     # first sync creates one). Tests that need the no-id case redirect
     # SOURCE_ID_PATH themselves.
     lib.source_id()
+    with open(lib.CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump({"consent": dict.fromkeys(("languages", "activity", "totals", "repo_count"), True)}, f)
 
 
 def tearDownModule():
@@ -306,10 +324,7 @@ class TestGitRoot(unittest.TestCase):
             self.assertEqual(lib.git_root(nested), os.path.normcase(root))
 
     def test_returns_none_outside_a_repo(self):
-        with tempfile.TemporaryDirectory() as tmp, \
-                mock.patch.object(os.path, "exists", return_value=False):
-            # The task's temporary directory may itself live in a checkout;
-            # this fixture represents a filesystem without any .git ancestors.
+        with tempfile.TemporaryDirectory() as tmp, without_ancestor_repositories(tmp):
             self.assertIsNone(lib.git_root(os.path.join(tmp, "plain")))
 
 
@@ -329,6 +344,7 @@ class TestRepoCount(unittest.TestCase):
         # filter rejects wholesale — point TEMP_ROOT elsewhere so this exercises
         # the git-root collapsing rather than the temp rule.
         with tempfile.TemporaryDirectory() as tmp, \
+                without_ancestor_repositories(tmp), \
                 mock.patch.object(lib, "TEMP_ROOT", os.path.normcase(os.path.join("C:", "nowhere"))):
             real_exists = os.path.exists
             fixture_prefix = os.path.normcase(os.path.abspath(tmp)) + os.sep
@@ -386,7 +402,8 @@ class TestRepoCount(unittest.TestCase):
             try:
                 with mock.patch.object(lib, "github_repo_count", return_value=None), \
                         mock.patch.object(lib, "local_repo_count", return_value=19):
-                    self.assertEqual(lib.repo_count(conn), 19)
+                    self.assertIsNone(lib.repo_count(conn))
+                    self.assertEqual(lib.repo_count(conn, include_private=True), 19)
             finally:
                 conn.close()
 
@@ -396,10 +413,10 @@ class TestGithubRepoCount(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cache = os.path.join(tmp, "github-repos.json")
             with open(cache, "w", encoding="utf-8") as f:
-                f.write('{"count": 40, "fetched_at": 1000}')
+                f.write('{"count": 40, "public": 12, "fetched_at": 1000}')
             with mock.patch.object(lib, "GITHUB_CACHE_PATH", cache), \
                     mock.patch("shutil.which", side_effect=AssertionError("must not shell out")):
-                self.assertEqual(lib.github_repo_count(now=1001), 40)
+                self.assertEqual(lib.github_repo_count(now=1001), 12)
 
     def test_stale_cache_triggers_a_refetch(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -410,7 +427,7 @@ class TestGithubRepoCount(unittest.TestCase):
             with mock.patch.object(lib, "GITHUB_CACHE_PATH", cache), \
                     mock.patch("shutil.which", return_value="gh"), \
                     mock.patch("subprocess.run", return_value=proc):
-                self.assertEqual(lib.github_repo_count(now=lib.GITHUB_CACHE_TTL + 1), 40)
+                self.assertEqual(lib.github_repo_count(now=lib.GITHUB_CACHE_TTL + 1), 12)
 
     def test_returns_none_without_gh(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -455,7 +472,7 @@ class TestGithubRepoCount(unittest.TestCase):
                     self.assertIsNone(lib.github_repo_count(now=0))
                 with mock.patch("subprocess.run", return_value=ok):
                     self.assertEqual(
-                        lib.github_repo_count(now=lib.GITHUB_FAILURE_TTL + 1), 40
+                        lib.github_repo_count(now=lib.GITHUB_FAILURE_TTL + 1), 12
                     )
 
 

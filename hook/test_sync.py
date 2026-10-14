@@ -50,6 +50,8 @@ def setUpModule():
     # first sync creates one). Tests that need the no-id case redirect
     # SOURCE_ID_PATH themselves.
     lib.source_id()
+    with open(lib.CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump({"consent": dict.fromkeys(("languages", "activity", "totals", "repo_count"), True)}, f)
 
 
 def tearDownModule():

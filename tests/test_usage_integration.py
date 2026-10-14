@@ -34,7 +34,8 @@ class UsageIntegrationTest(TempDirTest):
         with Home(self.tmp, "home") as home, mock.patch.object(usage, "default_roots", return_value=(("claude", root),)):
             home.add_events([{**edit(NOW), "project_key": PRIVATE, "agent": "claude-code"}])
             cfg = {**config.DEFAULTS, "github_user": "octo-cat", "repo": "octo-cat/card",
-                   "remote": remote, "avatar": False, "card": {"show_agents": True, "show_usage": True}}
+                   "remote": remote, "avatar": False, "consent": config.FULL_CONSENT,
+                   "card": {"show_agents": True, "show_usage": True}}
             self.assertEqual(publish.publish(cfg, now=NOW, repo_count_fn=lambda _: 0), "published")
             source = lib.source_id()
             body = git(remote, "show", f"devcard-data:machines/{source}.json").encode()
@@ -57,18 +58,17 @@ class UsageIntegrationTest(TempDirTest):
             self.assertEqual({row["model_family"] for row in agg["usage"]}, {"claude-sonnet", "unknown"})
             self.assertNotIn(PRIVATE.encode(), publish.encode_aggregate(agg))
 
-    def test_default_publish_keeps_agents_and_usage_on_the_machine(self):
-        # The owner's choice: with the card lines off, these aggregates are not published.
+    def test_default_publish_keeps_all_categories_on_the_machine(self):
         root, _ = self.transcript()
         remote = self.bare_remote()
         with Home(self.tmp, "home") as home, mock.patch.object(usage, "default_roots", return_value=(("claude", root),)):
             home.add_events([{**edit(NOW), "agent": "claude-code"}])
             cfg = {**config.DEFAULTS, "github_user": "octo-cat", "repo": "octo-cat/card",
-                   "remote": remote, "avatar": False}
-            self.assertEqual(publish.publish(cfg, now=NOW, repo_count_fn=lambda _: 0), "published")
-            body = json.loads(git(remote, "show", f"devcard-data:machines/{lib.source_id()}.json"))
-            for key in ("usage", "agents", "active_minutes"):
-                self.assertNotIn(key, body)
+                   "remote": remote, "avatar": False, "card": {"show_agents": True, "show_usage": True}}
+            self.assertEqual(publish.local_aggregate(cfg, NOW), {"format": 1})
+            with self.assertRaisesRegex(publish.PublishError, "consent"):
+                publish.publish(cfg, now=NOW, repo_count_fn=lambda _: 0)
+            self.assertEqual(git(remote, "for-each-ref"), "")
 
     def test_disabled_scan_does_not_discover_or_migrate(self):
         with Home(self.tmp, "home"):
@@ -80,7 +80,7 @@ class UsageIntegrationTest(TempDirTest):
 
     def test_failure_never_stops_publish_and_error_log_has_no_exception_text(self):
         with Home(self.tmp, "home"), mock.patch.object(usage, "default_roots", side_effect=OSError(PRIVATE)):
-            agg = publish.local_aggregate(config.DEFAULTS, NOW, repo_count_fn=lambda _: 0)
+            agg = publish.local_aggregate({**config.DEFAULTS, "consent": config.FULL_CONSENT}, NOW, repo_count_fn=lambda _: 0)
             self.assertEqual(agg["events"], 0)
             errors = Path(lib.ERROR_LOG_PATH).read_text(encoding="utf-8")
             self.assertIn("usage scan failed (OSError)", errors)
@@ -116,7 +116,7 @@ class UsageIntegrationTest(TempDirTest):
     def test_merge_sums_daily_tokens_and_propagates_unknown_cost(self):
         root, _ = self.transcript()
         with Home(self.tmp, "home"), mock.patch.object(usage, "default_roots", return_value=(("claude", root),)):
-            first = publish.local_aggregate({**config.DEFAULTS, "card": {"show_usage": True}}, NOW,
+            first = publish.local_aggregate({**config.DEFAULTS, "consent": config.FULL_CONSENT, "card": {"show_usage": True}}, NOW,
                                             repo_count_fn=lambda _: 3)
         second = deepcopy(first)
         second["usage"][0]["estimated_cost_usd"] = "0.1"
@@ -131,7 +131,7 @@ class UsageIntegrationTest(TempDirTest):
             invalid = deepcopy(first)
             invalid["usage"][0][key] = bad
             with self.subTest(key=key), self.assertWarns(RuntimeWarning):
-                self.assertEqual(data.merge([invalid], now=NOW)["usage"], [])
+                self.assertEqual(data.merge([invalid], now=NOW), {})
 
     def test_agent_totals_use_column_and_reject_free_form_labels(self):
         with Home(self.tmp, "home") as home:
@@ -141,7 +141,7 @@ class UsageIntegrationTest(TempDirTest):
                 conn.execute("PRAGMA ignore_check_constraints=ON")  # Simulate a corrupted/legacy database.
                 conn.execute("UPDATE events SET agent=CASE WHEN id=1 THEN 'claude-code' ELSE ? END", (PRIVATE,))
                 conn.commit()
-                agg = data.aggregate(conn, NOW, tz="UTC")
+                agg = data.aggregate(conn, NOW, tz="UTC", consent=config.FULL_CONSENT)
             finally:
                 conn.close()
         self.assertEqual(set(agg["agents"]), {"claude-code", "unknown"})

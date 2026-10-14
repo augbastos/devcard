@@ -1,5 +1,8 @@
 """`devcard render` and `devcard publish`, against temporary local bare repositories only."""
+import contextlib
+from concurrent.futures import ThreadPoolExecutor
 import getpass
+import io
 import json
 import os
 import socket
@@ -8,10 +11,11 @@ import unittest
 import xml.etree.ElementTree as ET
 from unittest import mock
 
-from devcard import config, publish
+from devcard import cli, config, data, publish, render
 from devcard._hook import lib
 
 from .helpers import PROJECT, Home, TempDirTest, edit, git
+from .test_cli import init
 
 NOW = 1760000000
 REAL_FETCH_AVATAR = publish.fetch_avatar  # Home() stubs it out; these tests exercise it
@@ -19,7 +23,8 @@ REAL_FETCH_AVATAR = publish.fetch_avatar  # Home() stubs it out; these tests exe
 
 def cfg_for(remote, **extra):
     return {**config.DEFAULTS, "github_user": "octo-cat", "repo": "octo-cat/octo-cat",
-            "remote": remote, "avatar": False, **extra}
+            "remote": remote, "avatar": False,
+            "consent": {**data.CORE_CATEGORIES, "repo_count_private": True}, **extra}
 
 
 def run(cfg, now=NOW, force=False):
@@ -199,7 +204,10 @@ class PublishTest(TempDirTest):
         self.assertIn(">12<", svg)
         for name, body in files.items():
             if name.startswith("machines/"):
-                self.assertEqual(self.show(name), body.decode())
+                if name == "machines/good.json":
+                    self.assertEqual(self.show(name), body.decode())
+                else:
+                    self.assertNotIn(name, self.tree())
 
     def test_first_publish_creates_the_orphan_branch(self):
         with Home(self.tmp, "a") as home:
@@ -277,12 +285,13 @@ class PublishTest(TempDirTest):
                 {"ts": NOW - 30, "language": None, "lines_added": 0, "event_type": "commit"},
             ])
             # Both opt-in lines on: the file then carries its largest allowed set.
-            run({**cfg_for(self.remote), "card": {"show_agents": True, "show_usage": True}}, force=True)
+            run({**cfg_for(self.remote), "consent": config.FULL_CONSENT,
+                 "card": {"show_agents": True, "show_usage": True}}, force=True)
             machine = lib.read_source_id()
         raw = self.show(f"machines/{machine}.json")
         agg = json.loads(raw)
         self.assertEqual(set(agg), {"format", "languages", "event_types", "days", "bytes", "events",
-                                    "first_ts", "repo_count", "updated_at", "agents", "active_minutes", "usage"})
+                                    "first_ts", "repo_count", "updated_at", "agents", "active_minutes", "usage", "lines", "repo_count_private"})
         self.assertEqual(set(agg["agents"]["unknown"]), {"events", "commits", "code_edits", "lines_added",
                                                           "lines_removed", "bytes_added", "active_minutes"})
         self.assertEqual(agg["agents"]["unknown"]["active_minutes"], 2.5)
@@ -383,7 +392,7 @@ class RemoteValidationTest(TempDirTest):
         files = repo.write_tree.call_args.args[0]
         ET.fromstring(files["card.svg"])
         self.assertIn(b">7<", files["card.svg"])
-        self.assertEqual(files["machines/deep.json"], b"[" * 2000 + b"]" * 2000)
+        self.assertNotIn("machines/deep.json", files)
 
 
 class DebounceRaceTest(TempDirTest):
@@ -465,7 +474,7 @@ class HookIntegrationTest(TempDirTest):
         with Home(self.tmp, "a") as home:
             home.add_events([edit(int(time.time()) - 60)])
             config.save(cfg_for(remote))
-            with mock.patch.object(lib, "repo_count", lambda _conn: 3):
+            with mock.patch.object(lib, "repo_count", lambda _conn, **_kw: 3):
                 self.assertEqual(lib.auto_publish(), "published")
                 self.assertEqual(lib.auto_publish(), "skipped")
         self.assertIn("3 repos", git(remote, "show", f"{publish.BRANCH}:card.svg"))
@@ -475,7 +484,7 @@ class HookIntegrationTest(TempDirTest):
         with Home(self.tmp, "a") as home, mock.patch.object(publish, "_spawn_waiter") as spawn:
             home.add_events([edit(int(time.time()) - 60)])
             config.save(cfg_for(remote))
-            with mock.patch.object(lib, "repo_count", lambda _conn: 3):
+            with mock.patch.object(lib, "repo_count", lambda _conn, **_kw: 3):
                 self.assertEqual(publish.auto(), "published")
                 spawn.assert_not_called()
                 self.assertEqual(publish.auto(), "skipped")
@@ -494,7 +503,7 @@ class HookIntegrationTest(TempDirTest):
         with Home(self.tmp, "a") as home, mock.patch.object(publish.time, "time", lambda: clock[0]):
             home.add_events([edit(NOW - 60, "Python", 5)])
             config.save(cfg_for(remote))
-            with mock.patch.object(lib, "repo_count", lambda _conn: 3):
+            with mock.patch.object(lib, "repo_count", lambda _conn, **_kw: 3):
                 self.assertEqual(publish.auto(), "published")
                 clock[0] += 600
                 home.add_events([edit(int(clock[0]), "Go", 7)])
@@ -513,7 +522,7 @@ class HookIntegrationTest(TempDirTest):
     def test_auto_publish_logs_instead_of_raising(self):
         with Home(self.tmp, "a") as home:
             config.save(cfg_for(os.path.join(self.tmp, "missing.git")))
-            with mock.patch.object(lib, "repo_count", lambda _conn: 0):
+            with mock.patch.object(lib, "repo_count", lambda _conn, **_kw: 0):
                 self.assertIsNone(lib.auto_publish())
             with open(home.paths[(lib, "ERROR_LOG_PATH")], encoding="utf-8") as f:
                 self.assertIn("devcard publish", f.read())
@@ -552,6 +561,324 @@ class AvatarTest(TempDirTest):
     def test_a_failure_renders_without_one(self):
         with Home(self.tmp, "a"), mock.patch("urllib.request.urlopen", side_effect=OSError("offline")):
             self.assertIsNone(REAL_FETCH_AVATAR("octo-cat", now=NOW))
+
+
+def settings(remote="", consent=None):
+    return {**config.DEFAULTS, "repo": "octo-cat/cards", "github_user": "octo-cat",
+            "remote": remote, "avatar": False,
+            "consent": config.NO_CONSENT if consent is None else consent}
+
+
+def allow(*categories):
+    return {**config.NO_CONSENT, **dict.fromkeys(categories, True)}
+
+
+class ConsentTest(TempDirTest):
+    def seed(self, home):
+        home.add_events([{**edit(NOW - 60, "Python", 23456), "agent": "codex"},
+                         {**edit(NOW - 50, "Rust", 1234), "agent": "claude-code"}])
+        import devcard_usage
+
+        conn = lib.init_db()
+        devcard_usage.ensure_usage_schema(conn)
+        conn.execute("INSERT INTO usage_aggregates VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     ("2025-10-09", "codex", "gpt", 98765, 5678, 4321, 123, "19.8765", 0, 1))
+        conn.commit()
+        conn.close()
+
+    def test_default_none_and_malformed_consents_fail_closed(self):
+        with Home(self.tmp, "a") as home:
+            self.seed(home)
+            conn = lib.init_db()
+            try:
+                for consent in (None, {}, "all", [True], dict.fromkeys(config.CONSENT_CATEGORIES, "true")):
+                    self.assertEqual(data.aggregate(conn, NOW, consent=consent), {"format": 1})
+            finally:
+                conn.close()
+            for cfg in (settings(), {k: v for k, v in settings().items() if k != "consent"}):
+                with mock.patch.object(publish, "_Repo") as repo, self.assertRaisesRegex(publish.PublishError, "consent"):
+                    publish.publish(cfg, now=NOW, force=True)
+                repo.assert_not_called()
+
+    def test_each_category_is_the_only_data_in_serialized_bytes(self):
+        with Home(self.tmp, "a") as home:
+            self.seed(home)
+            for category, fields in data.CATEGORY_FIELDS.items():
+                with self.subTest(category=category):
+                    cfg = settings(consent=allow(category))
+                    agg = publish.local_aggregate(cfg, NOW, repo_count_fn=lambda _c: 37)
+                    raw = publish.encode_aggregate(agg)
+                    self.assertTrue(set(agg) <= {"format", *fields})
+                    for other, denied_fields in data.CATEGORY_FIELDS.items():
+                        if other != category:
+                            for key in denied_fields:
+                                self.assertNotIn(('\n "' + key + '":').encode(), raw)
+                    self.assertNotIn(b"acme-secret-client", raw)
+                    self.assertNotIn(b"project_key", raw)
+                    self.assertNotIn(b"source_id", raw)
+                    data._validate_aggregate(agg, NOW)
+
+    def test_languages_without_totals_are_percentages_not_counts(self):
+        with Home(self.tmp, "a") as home:
+            self.seed(home)
+            agg = publish.local_aggregate(settings(consent=allow("languages")), NOW)
+            raw = publish.encode_aggregate(agg)
+            self.assertAlmostEqual(sum(agg["language_percentages"].values()), 100)
+            for value in (b"23456", b"first_ts", b"bytes", b"events", b"updated_at"):
+                self.assertNotIn(value, raw)
+
+    def test_every_excluded_category_is_absent_from_full_serialized_data(self):
+        with Home(self.tmp, "a") as home:
+            self.seed(home)
+            for category, fields in data.CATEGORY_FIELDS.items():
+                consent = {**config.FULL_CONSENT, category: False}
+                raw = publish.encode_aggregate(publish.local_aggregate(settings(consent=consent), NOW,
+                                                                      repo_count_fn=lambda _c: 37))
+                for key in fields:
+                    self.assertNotIn(('\n "' + key + '":').encode(), raw)
+
+    def test_agents_and_usage_publish_allowlisted_daily_buckets(self):
+        with Home(self.tmp, "a") as home:
+            self.seed(home)
+            cfg = settings(consent=allow("agents", "usage"))
+            agg = publish.local_aggregate(cfg, NOW)
+            self.assertEqual(agg["agents"]["codex"]["lines_added"], 23456)
+            self.assertEqual(agg["agents"]["codex"]["active_minutes"], 2)
+            self.assertEqual(agg["usage"][0]["input_tokens"], 98765)
+            self.assertEqual(agg["usage"][0]["estimated_cost_usd"], "19.8765")
+            self.assertEqual(agg["usage"][0]["date"], "2025-10-09")
+            self.assertEqual(agg["active_minutes"]["2025-10-09"]["codex"], 2)
+            hidden = publish.render_files(cfg, [agg], NOW)["card.svg"]
+            self.assertNotIn(b"Codex", hidden)
+            cfg["card"] = {"show_agents": True, "show_usage": True}
+            visible = publish.render_files(cfg, [agg], NOW)["card.svg"]
+            self.assertIn(b"Codex", visible)
+            self.assertIn(b"API-equivalent", visible)
+            cfg["consent"] = allow("languages")
+            denied = publish.render_files(cfg, [agg], NOW)["card.svg"]
+            self.assertNotIn(b"Codex", denied)
+            self.assertNotIn(b"API-equivalent", denied)
+
+    def test_partial_cards_draw_only_present_sections_in_every_layout(self):
+        with Home(self.tmp, "a") as home:
+            self.seed(home)
+            for category in data.CATEGORY_FIELDS:
+                cfg = settings(consent=allow(category))
+                agg = publish.local_aggregate(cfg, NOW, repo_count_fn=lambda _c: 37)
+                card = data.card_data(data.merge([agg], now=NOW), "octo-cat", NOW, tz="UTC")
+                for layout in render.LAYOUTS:
+                    svg = render.render(card, layout=layout, now=NOW)
+                    root = ET.fromstring(svg)
+                    self.assertGreater(int(root.get("height")), 50)
+                    if category != "repo_count":
+                        self.assertNotIn("?tab=repositories", svg)
+                    if category != "activity":
+                        self.assertNotIn('<rect class="heat', svg)
+                        self.assertNotIn("day streak", svg)
+                    if category != "totals":
+                        self.assertNotIn("tracking since", svg)
+                        self.assertNotIn("bytes)", svg)
+                    if category != "languages":
+                        self.assertNotIn("barclip", svg)
+
+    def test_public_count_and_private_count_have_separate_cache_semantics(self):
+        with Home(self.tmp, "a"), mock.patch("shutil.which", return_value="gh"), \
+                mock.patch("subprocess.run", return_value=mock.Mock(returncode=0, stdout='{"public":12,"private":28}')) as run:
+            # Home's default patch is removed for this isolated API test.
+            original = lib.github_repo_count
+            # Recover the actual function from the library module's source-free reference.
+            count = REAL_GITHUB_COUNT
+            with mock.patch.object(lib, "github_repo_count", count):
+                self.assertEqual(lib.repo_count(None), 12)
+                self.assertNotIn("owned_private_repos", run.call_args.args[0][-1])
+                self.assertEqual(lib.repo_count(None, include_private=True), 40)
+                self.assertIn("owned_private_repos", run.call_args.args[0][-1])
+                self.assertEqual(lib.repo_count(None), 12)
+            self.assertIs(lib.github_repo_count, original)
+
+    def test_legacy_combined_cache_cannot_be_used_as_public(self):
+        with Home(self.tmp, "a"), mock.patch("shutil.which", return_value=None):
+            with open(lib.GITHUB_CACHE_PATH, "w", encoding="utf-8") as f:
+                json.dump({"count": 40, "fetched_at": NOW}, f)
+            self.assertIsNone(REAL_GITHUB_COUNT(now=NOW))
+            with mock.patch.object(lib, "local_repo_count", return_value=900), \
+                    mock.patch.object(lib, "github_repo_count", return_value=None):
+                self.assertIsNone(lib.repo_count(None))
+
+    def test_local_count_api_uses_opt_in_and_skips_api_without_consent(self):
+        with Home(self.tmp, "a") as home:
+            self.seed(home)
+            with mock.patch.object(lib, "repo_count", return_value=12) as count:
+                public = publish.local_aggregate(settings(consent=allow("repo_count")), NOW)
+                self.assertEqual(public["repo_count"], 12)
+                count.assert_called_once_with(mock.ANY, include_private=False)
+                count.reset_mock()
+                private = publish.local_aggregate(settings(consent=allow("repo_count", "repo_count_private")), NOW)
+                self.assertTrue(private["repo_count_private"])
+                count.assert_called_once_with(mock.ANY, include_private=True)
+                count.reset_mock()
+                publish.local_aggregate(settings(consent=allow("totals")), NOW)
+                count.assert_not_called()
+
+    def test_old_config_hook_notices_at_most_once_a_day(self):
+        with Home(self.tmp, "a") as home:
+            with open(lib.CONFIG_PATH, "w", encoding="utf-8") as f:
+                json.dump({"github_user": "octo-cat", "repo": "octo-cat/cards"}, f)
+            self.assertFalse(config.has_consent(config.load()))
+            with mock.patch.object(publish.time, "time", return_value=NOW), mock.patch.object(publish, "_Repo") as repo:
+                for _ in range(3):
+                    self.assertIsNone(lib.auto_publish())
+                repo.assert_not_called()
+            with open(os.path.join(home.dir, "errors.log"), encoding="utf-8") as f:
+                self.assertEqual(len(f.readlines()), 1)
+            with mock.patch.object(publish.time, "time", return_value=NOW + 86400):
+                self.assertIsNone(lib.auto_publish())
+            with open(os.path.join(home.dir, "errors.log"), encoding="utf-8") as f:
+                self.assertEqual(len(f.readlines()), 2)
+
+    def test_init_yes_does_not_publish_or_grant_consent(self):
+        remote = self.bare_remote()
+        with Home(self.tmp, "a"), mock.patch.object(cli, "publish") as send:
+            code, out = init(["--yes", "--user", "octo-cat", "--repo", "octo-cat/cards", "--remote", remote, "--mode", "git"])
+            self.assertEqual(code, 0)
+            self.assertEqual(config.consents(config.load()), config.NO_CONSENT)
+            send.assert_not_called()
+            self.assertIn("publication is paused", out)
+        self.assertEqual(git(remote, "for-each-ref"), "")
+
+    def test_concurrent_hooks_emit_only_one_notice(self):
+        with Home(self.tmp, "a") as home:
+            config.save(settings())
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                list(pool.map(lambda _: lib.auto_publish(), range(24)))
+            with open(os.path.join(home.dir, "errors.log"), encoding="utf-8") as f:
+                self.assertEqual(len(f.readlines()), 1)
+
+    def test_init_prompts_default_no_even_when_rerun_with_previous_grants(self):
+        with Home(self.tmp, "a"), mock.patch.object(cli, "publish") as send:
+            config.save(settings(self.bare_remote(), config.FULL_CONSENT))
+            code, _ = init(["--mode", "claude"], answers=["", "", *[""] * len(config.CONSENT_CATEGORIES)])
+            self.assertEqual(code, 0)
+            self.assertEqual(config.consents(config.load()), config.NO_CONSENT)
+            send.assert_not_called()
+
+    def test_legacy_wire_is_blocked_without_required_consents(self):
+        with Home(self.tmp, "a") as home:
+            self.seed(home)
+            config.save(settings(consent=allow("languages")))
+            with mock.patch("urllib.request.urlopen") as network, mock.patch.object(lib, "WORKER_INGEST_URL", "https://example.test/ingest"):
+                self.assertFalse(lib.send_to_worker([], 12, source="testsource"))
+                conn = lib.init_db()
+                try:
+                    self.assertFalse(lib.sync_pending(conn))
+                finally:
+                    conn.close()
+                network.assert_not_called()
+
+
+REAL_GITHUB_COUNT = lib.github_repo_count
+
+
+class PrivacyCommandsTest(TempDirTest):
+    def command(self, *args):
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            code = cli.main(list(args))
+        return code, out.getvalue()
+
+    def test_private_opt_in_alone_is_saved_without_authorizing_or_removing_publication(self):
+        with Home(self.tmp, "a"), mock.patch.object(publish, "_Repo") as repo:
+            config.save(settings())
+            code, out = self.command("privacy", "--grant", "repo_count_private")
+            self.assertEqual(code, 0)
+            self.assertTrue(config.consents(config.load())["repo_count_private"])
+            self.assertFalse(config.has_consent(config.load()))
+            self.assertIn("publication remains paused", out)
+            repo.assert_not_called()
+
+    def test_grant_revoke_and_revoke_last_category_remove_remote_bytes(self):
+        remote = self.bare_remote()
+        with Home(self.tmp, "a") as home:
+            home.add_events([edit(int(time.time()) - 60, "Python", 23456)])
+            config.save(settings(remote))
+            code, out = self.command("privacy")
+            self.assertEqual(code, 0)
+            self.assertIn("nothing (paused)", out)
+            self.assertEqual(self.command("privacy", "--grant", "languages")[0], 0)
+            self.assertEqual(self.command("privacy", "--grant", "totals")[0], 0)
+            machine = lib.source_id()
+            self.assertIn('"lines": 23456', git(remote, "show", f"{publish.BRANCH}:machines/{machine}.json"))
+            self.assertEqual(self.command("privacy", "--revoke", "totals")[0], 0)
+            raw = git(remote, "show", f"{publish.BRANCH}:machines/{machine}.json")
+            self.assertNotIn("23456", raw)
+            self.assertNotIn('"first_ts"', raw)
+            self.assertIn("language_percentages", raw)
+            self.assertEqual(self.command("privacy", "--revoke", "languages")[0], 0)
+            self.assertEqual(git(remote, "for-each-ref", publish.REF), "")
+            self.assertFalse(config.has_consent(config.load()))
+
+    def test_revoke_scrubs_all_machines_and_stale_full_config_cannot_republish(self):
+        remote = self.bare_remote()
+        full = {**data.CORE_CATEGORIES, "repo_count_private": True}
+        for name, language in (("a", "Python"), ("b", "Rust")):
+            with Home(self.tmp, name) as home:
+                home.add_events([edit(int(time.time()) - 60, language, 23456)])
+                cfg = settings(remote, full)
+                config.save(cfg)
+                publish.publish(cfg, force=True, repo_count_fn=lambda _c: 40)
+        with Home(self.tmp, "a"):
+            self.assertEqual(self.command("privacy", "--revoke", "totals")[0], 0)
+            publish.publish(settings(remote, full), force=True, repo_count_fn=lambda _c: 40)
+        for name in git(remote, "ls-tree", "-r", "--name-only", publish.BRANCH, "machines").splitlines():
+            raw = git(remote, "show", f"{publish.BRANCH}:{name}")
+            self.assertNotIn('"first_ts"', raw)
+            self.assertNotIn('"event_types"', raw)
+            self.assertIn("language_percentages", raw)
+
+    def test_private_count_revocation_discards_legacy_counts_from_other_machines(self):
+        old = {"format": 1, "repo_count": 40}
+        self.assertNotIn("repo_count", data.consented(old, allow("repo_count")))
+        self.assertNotIn("repo_count", data.consented({**old, "repo_count_private": True}, allow("repo_count")))
+        self.assertEqual(data.consented({**old, "repo_count_private": False}, allow("repo_count"))["repo_count"], 40)
+
+    def test_unpublish_refuses_foreign_branch_and_leaves_it_untouched(self):
+        remote = self.bare_remote()
+        with Home(self.tmp, "a"):
+            cfg = settings(remote, allow("totals"))
+            config.save(cfg)
+            repo = publish._Repo(os.path.join(self.tmp, "builder.git"), remote)
+            repo.ensure()
+            commit = repo.commit(repo.write_tree({"important.txt": b"keep"}), NOW)
+            self.assertTrue(repo.push(commit, None)[0])
+            code, out = self.command("unpublish")
+            self.assertEqual(code, 1)
+            self.assertIn("not owned", out)
+            self.assertEqual(git(remote, "rev-parse", publish.REF), commit)
+            self.assertFalse(config.has_consent(config.load()))
+
+    def test_unpublish_refuses_devcard_owned_default_branch(self):
+        remote = self.bare_remote()
+        with Home(self.tmp, "a"):
+            cfg = settings(remote, allow("totals"))
+            config.save(cfg)
+            publish.publish(cfg, force=True)
+            git(remote, "symbolic-ref", "HEAD", publish.REF)
+            head = git(remote, "rev-parse", publish.REF)
+            code, out = self.command("unpublish")
+            self.assertEqual(code, 1)
+            self.assertIn("default branch", out)
+            self.assertEqual(git(remote, "rev-parse", publish.REF), head)
+
+    def test_failed_remote_update_saves_denial_and_reports_pending_cleanup(self):
+        with Home(self.tmp, "a"):
+            config.save(settings(os.path.join(self.tmp, "missing.git"), allow("totals", "languages")))
+            code, out = self.command("privacy", "--revoke", "totals")
+            self.assertEqual(code, 1)
+            self.assertFalse(config.consents(config.load())["totals"])
+            self.assertIn("remote update failed", out)
+
+
+if __name__ == "__main__":
+    unittest.main()
 
 
 if __name__ == "__main__":

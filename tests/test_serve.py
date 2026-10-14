@@ -80,7 +80,8 @@ class ServerTest(TempDirTest):
                                              {"language": "Rust", "lines_added": 7},
                                              {"language": "Go", "lines_added": 4}])
         with contextlib.closing(sqlite3.connect(self.db_path)) as conn, conn:
-            card = data.card_data(data.merge([data.aggregate(conn, NOW, tz="UTC", repo_count=2)]), "devcard", NOW, tz="UTC")
+            card = data.card_data(data.merge([data.aggregate(conn, NOW, tz="UTC", repo_count=2,
+                                                           consent=data.CORE_CATEGORIES)]), "devcard", NOW, tz="UTC")
         self.assertEqual(result["streak"], card.streak)
         self.assertEqual(result["heatmap"], [[{"day": c.day, "lines": c.lines, "level": c.level} for c in w] for w in card.heat_weeks])
         self.assertEqual((len(result["heatmap"]), len(result["heatmap"][0])), (16, 7))
@@ -102,6 +103,14 @@ class ServerTest(TempDirTest):
             conn.execute("INSERT INTO events VALUES (?, 'Rust', 3, 0, 90, 'edit', ?, 'codex')", (1759966200, PRIVATE))
         rows = self.get_json(f"/api/days?from={TODAY}&to={TODAY}")
         self.assertEqual(rows[0]["lines_added"], 3)
+
+    def test_local_card_can_show_agents_without_publication_consent(self):
+        self.dashboard.cfg["card"] = {"show_agents": True}
+        self.assertFalse(config.has_consent(self.dashboard.cfg))
+        status, _, body = self.request("/api/card.svg")
+        self.assertEqual(status, 200)
+        self.assertIn(b"Claude Code", body)
+        self.assertIn(b"active (est.)", body)
 
     def test_agents_sum_to_all_event_totals(self):
         rows = self.get_json("/api/agents")
