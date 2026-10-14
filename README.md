@@ -88,6 +88,19 @@ hands — with no per-tool integration to maintain. `devcard init --mode git
 repositories. `devcard init --layout wide --theme terminal --lang pt` sets them
 too. [All of it →](docs/customizing.md)
 
+`devcard serve` opens a loopback-only [local dashboard](docs/dashboard.md)
+with daily token counts by agent/model family and API-equivalent cost estimates.
+Publish and dashboard startup incrementally scan local Claude Code and Codex
+transcripts; set `"usage": false` to skip scanning. The published machine JSON
+includes agent totals and daily usage only when the matching card line is on;
+by default they stay on this machine.
+Unknown prices remain unavailable; estimates are not subscription bills.
+
+Optional card lines use `"card": {"show_agents": true, "show_usage": true}`.
+Both default to false. Agent percentages use recorded lines added when an
+`agent` column exists. Active hours estimate sessions from event gaps (15-minute
+idle threshold, 2-minute tail); concurrent agents are counted independently.
+
 ## How it works
 
 ```mermaid

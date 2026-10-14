@@ -46,8 +46,9 @@ also reads as `unknown`; new explicit values outside the allowlist are rejected.
 The extension point for Codex is a normalized event passed to
 `devcard_lib.insert_event(conn, event)` with `event["agent"] = "codex"`. An
 adapter must select its own exclusive machine capture mode and keep the same
-counting units. This milestone provides the schema and API, not a Codex hook or
-a reader of Codex session logs; git-mode commits remain attributed to `git`.
+counting units. This provides the schema and API, not a Codex code-edit hook;
+the separate usage scanner reads Codex token logs. Git-mode commits remain
+attributed to `git`.
 
 ## Estimated active time
 
@@ -82,8 +83,12 @@ per-agent active minutes sum to the daily estimates. NULL agents are grouped
 under `unknown`. The SQL projection excludes projects, paths, source ids and
 event row ids; the exported bytes also omit languages, raw timestamps, event
 types and code content. Only fixed agent labels, dates and numbers are exported.
-The legacy Worker sync payload and card rendering are unchanged; this is a
-local aggregate API for later integration.
+The local dashboard always reads this export; the published machine JSON
+carries it only when `card.show_agents` is on (default off), and machine merges
+then sum the agent totals and daily estimates. The same flag shows the line
+proportions and estimated active time on the card. Activity estimates use
+the configured IANA timezone or UTC when no timezone is set. The legacy
+Worker sync payload and renderer remain unchanged.
 
 ## "code edits" is a claude-mode number
 

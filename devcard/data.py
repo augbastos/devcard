@@ -6,20 +6,25 @@ Two steps, kept apart because they run on different machines:
    rollups the Worker keeps in D1 (agg_language, agg_event_type, agg_day,
    agg_totals, stats_snapshot). It is what gets published as this machine's
    JSON file, so it is privacy-bound exactly like the old sync payload: built
-   from a SQL projection that never selects `project_key`, it can only hold
-   language names, counts, day keys and timestamps.
+   from SQL projections and the activity/usage export allowlists. It holds
+   language names, fixed agent/model-family labels, counts, day keys,
+   activity and cost estimates, and aggregate timestamps, never `project_key`.
 2. `card_data(aggregates, ...)` sums any number of those dicts (one per
    machine) and derives what the renderer draws, mirroring loadCardData() in
    worker/src/queries.ts.
 """
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal, localcontext
+import json
 import math
 import re
 import time
 import warnings
 
 from .strings import MONTHS
+from ._hook import activity, usage as usage_hook
+from .usage import public_rows
 
 AGGREGATE_FORMAT = 1
 MIN_TIMESTAMP = 1577836800  # 2020-01-01 UTC
@@ -30,6 +35,8 @@ HEAT_WEEKS = 16
 KEEP_DAYS = HEAT_WEEKS * 7 + 14
 NAMED_LANGUAGES = 6
 OTHER_LANGUAGE = "\u0000other"
+AGENTS = activity.AGENTS
+AGENT_FIELDS = ("lines_added", "lines_removed", "bytes_added", "events", "commits", "code_edits")
 
 
 @dataclass
@@ -67,6 +74,11 @@ class CardData:
     avatar: object
     sponsorable: bool
     github_user: str
+    agent_totals: dict = field(default_factory=dict)
+    usage: list = field(default_factory=list)
+    show_agents: bool = False
+    show_usage: bool = False
+    active_minutes: object = None
 
 
 def day_fn(tz=None):
@@ -84,7 +96,7 @@ def day_fn(tz=None):
     return lambda ts: datetime.fromtimestamp(ts).date().isoformat()
 
 
-def aggregate(conn, now, tz=None, repo_count=0):
+def aggregate(conn, now, tz=None, repo_count=0, include_agents=True, include_usage=True):
     """This machine's rollups, from the hook's local SQLite.
 
     Every query names its columns; none can return `project_key`. The day
@@ -114,6 +126,9 @@ def aggregate(conn, now, tz=None, repo_count=0):
     total_bytes, events, first_ts = conn.execute(
         "SELECT COALESCE(SUM(bytes_added), 0), COUNT(*), MIN(ts) FROM events"
     ).fetchone()
+    # Agent totals and token/cost usage are opt-in for the PUBLISHED file: they only
+    # leave the machine when the matching card line is switched on.
+    exported_activity = activity_rows(conn, tz) if include_agents else {}
     return {
         "format": AGGREGATE_FORMAT,
         "languages": dict(sorted(languages.items())),
@@ -124,11 +139,24 @@ def aggregate(conn, now, tz=None, repo_count=0):
         "first_ts": None if first_ts is None else int(first_ts),
         "repo_count": int(repo_count),
         "updated_at": int(now),
+        **exported_activity,
+        **({"usage": public_rows(conn)} if include_usage else {}),
     }
+
+
+def activity_rows(conn, tz=None):
+    """Use M2's exact export allowlist; never reconstruct raw event payloads."""
+    if "agent" not in {row[1] for row in conn.execute("PRAGMA table_info(events)")}:
+        return {"agents": {}, "active_minutes": {}}
+    return json.loads(activity.export_aggregate(conn, timezone=tz or timezone.utc))
 
 
 def _int(value):
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+
+
+def _valid_minutes(value):
+    return type(value) in (int, float) and 0 <= value <= 2**63 - 1 and math.isfinite(value)
 
 
 def _validate_aggregate(agg, now):
@@ -145,6 +173,35 @@ def _validate_aggregate(agg, now):
         value = agg.get(key)
         if type(value) is not int or not 0 <= value <= 2**63 - 1:
             raise ValueError(f"invalid {key}")
+    totals = agg.get("agents", {})
+    if not isinstance(totals, dict):
+        raise ValueError("invalid agent totals")
+    for agent, row in totals.items():
+        if agent not in AGENTS or not isinstance(row, dict) or set(row) != {*AGENT_FIELDS, "active_minutes"}:
+            raise ValueError("invalid agent totals")
+        if any(type(row[k]) is not int or not 0 <= row[k] <= 2**63 - 1 for k in AGENT_FIELDS):
+            raise ValueError("invalid agent count")
+        if not _valid_minutes(row["active_minutes"]):
+            raise ValueError("invalid active minutes")
+    minutes = agg.get("active_minutes", {})
+    if not isinstance(minutes, dict):
+        raise ValueError("invalid active minutes")
+    for day, agents in minutes.items():
+        try:
+            valid_day = isinstance(day, str) and date.fromisoformat(day).isoformat() == day
+        except ValueError:
+            valid_day = False
+        if (not valid_day or not isinstance(agents, dict)
+                or any(agent not in AGENTS or not _valid_minutes(value) for agent, value in agents.items())):
+            raise ValueError("invalid daily active minutes")
+    rows = agg.get("usage", [])
+    if not isinstance(rows, list):
+        raise ValueError("invalid usage")
+    # Reuse M4's enum, date, count and Decimal validation on untrusted peers.
+    try:
+        usage_hook.export_usage(rows)
+    except (ValueError, TypeError, KeyError, AttributeError):
+        raise ValueError("invalid usage") from None
     for key in ("languages", "event_types", "days"):
         table = agg.get(key)
         if not isinstance(table, dict):
@@ -178,7 +235,8 @@ def merge(aggregates, now=None):
     """
     now = int(time.time() if now is None else now)
     out = {"languages": {}, "event_types": {}, "days": {}, "bytes": 0, "events": 0,
-           "first_ts": None, "repo_count": 0, "updated_at": 0}
+           "first_ts": None, "repo_count": 0, "updated_at": 0, "agents": {}, "active_minutes": {}, "usage": []}
+    usage_buckets = {}
     for agg in aggregates:
         try:
             _validate_aggregate(agg, now)
@@ -199,6 +257,27 @@ def merge(aggregates, now=None):
             out["first_ts"] = first
         out["repo_count"] = max(out["repo_count"], _int(agg.get("repo_count")))
         out["updated_at"] = max(out["updated_at"], _int(agg.get("updated_at")))
+        for agent, row in agg.get("agents", {}).items():
+            dest = out["agents"].setdefault(agent, dict.fromkeys((*AGENT_FIELDS, "active_minutes"), 0))
+            for key in (*AGENT_FIELDS, "active_minutes"):
+                dest[key] += row[key]
+        for day, agents in agg.get("active_minutes", {}).items():
+            dest = out["active_minutes"].setdefault(day, {})
+            for agent, minutes in agents.items():
+                dest[agent] = dest.get(agent, 0) + minutes
+        for row in json.loads(usage_hook.export_usage(agg.get("usage", []))):
+            key = (row["date"], row["agent"], row["model_family"])
+            if key not in usage_buckets:
+                usage_buckets[key] = row
+                continue
+            dest = usage_buckets[key]
+            for name in usage_hook.TOKEN_FIELDS:
+                dest[name] += row[name]
+            a, b = dest["estimated_cost_usd"], row["estimated_cost_usd"]
+            with localcontext() as ctx:
+                ctx.prec = 80
+                dest["estimated_cost_usd"] = None if a is None or b is None else format(Decimal(a) + Decimal(b), "f")
+    out["usage"] = [usage_buckets[key] for key in sorted(usage_buckets)]
     return out
 
 
@@ -259,7 +338,7 @@ def build_heatmap(day_lines, today, locale):
 
 
 def card_data(merged, github_user, now, locale="en", tz=None, avatar=None, badges=(), pins=(),
-              sponsorable=False):
+              sponsorable=False, card=None):
     """What the renderer draws, from merged aggregates. Mirrors loadCardData()."""
     to_day = day_fn(tz)
     rows = sorted(
@@ -290,4 +369,10 @@ def card_data(merged, github_user, now, locale="en", tz=None, avatar=None, badge
         avatar=avatar,
         sponsorable=sponsorable,
         github_user=github_user,
+        agent_totals=merged.get("agents", {}),
+        usage=merged.get("usage", []),
+        show_agents=isinstance(card, dict) and card.get("show_agents") is True,
+        show_usage=isinstance(card, dict) and card.get("show_usage") is True,
+        active_minutes=sum(row["active_minutes"] for row in merged.get("agents", {}).values())
+        if merged.get("agents") else None,
     )

@@ -18,7 +18,10 @@ The command prints the actual port when `--port 0` asks the OS for a free one.
 The dashboard works without `devcard init`, GitHub, internet access or a
 publishing configuration. It reads the same local `events.db` as the hooks.
 An absent database produces an empty dashboard; viewing it never creates a
-database or installation identity. A database error is displayed as an error,
+database or installation identity. Startup incrementally scans transcript usage
+into an existing database unless `"usage": false`. Scan errors are logged
+without stopping the dashboard. Restart to scan newer logs; HTTP responses
+remain read-only. A database error is displayed as an error,
 rather than silently shown as zero activity. Refresh reads new hook writes.
 
 ## Views and counting
@@ -33,11 +36,14 @@ rather than silently shown as zero activity. Refresh reads new hook writes.
   days; the table and export retain the entire selected range.
 - Per-agent totals when the events table has an `agent` column. Missing or
   empty attribution becomes `unknown`; attribution is a heuristic.
-- Tokens per agent/model and **API-equivalent cost (estimate; not your
-  subscription bill)**. No price is invented. Missing prices show
-  “Unavailable,” including groups where only some rows have a price.
+  Expand the daily activity table to inspect estimated minutes per agent/day.
+- Tokens per day/agent/model family and **API-equivalent cost (estimate; not
+  your subscription bill)** from the real M4 usage rollups. Missing prices
+  show “—”, including buckets where only some calls have a price. Persistent
+  scanner diagnostics display an incomplete-coverage notice.
 - A live local card preview from the existing Python renderer, without avatar
-  downloads, configured badges or pins. Light/dark follows the OS preference.
+  downloads, configured badges or pins. Light/dark follows the OS preference;
+  the optional `card.show_agents` and `card.show_usage` flags apply.
 
 All totals are for this machine. Published cards can include multiple
 machines; no peer state is fetched by the dashboard. Repository count is the
@@ -49,9 +55,13 @@ language totals as the renderer; days include unclassified events such as
 commits. Day boundaries follow the saved IANA timezone, or system-local time
 when none is configured.
 
-Active time and an hours-only sessions timeline are deferred: M1 has no
-session/time tables, and M3 does not infer time or modify hook capture.
-Missing agent/usage data is shown explicitly, rather than estimated.
+The dashboard uses the real `agent` column and `devcard_activity` export:
+`claude-code`, `codex`, `git`, `unknown`. Older rows without attribution remain
+unknown. Active minutes are event-based estimates (15-minute idle threshold,
+2-minute tail), split at midnight per agent; simultaneous agents add
+independently. They measure neither editor time nor elapsed wall-clock time.
+Activity estimates and usage buckets use the configured IANA timezone or UTC;
+code-line days use system-local time when no timezone is configured.
 
 ## JSON API and exports
 
@@ -62,8 +72,8 @@ numbers and labels, never event records, file paths or project names.
 | --- | --- |
 | `/api/summary` | Object with `totals`, `streak`, `languages`, `heatmap`, `today`, `timezone`, `first_ts`. |
 | `/api/days?from=2025-01-01&to=2025-01-31` | Array of `{day, language, lines_added, lines_removed, bytes_added, events}`. `language` can be null. Defaults to the heatmap start through today. |
-| `/api/agents` | Array of `{agent, lines_added, lines_removed, bytes_added, events}`; empty without the optional column. |
-| `/api/usage` | Array per agent/model with input/output/cache/reasoning/total token counts and nullable `cost_usd`; empty without a recognized optional table. |
+| `/api/agents` | Per-agent activity export totals (`events`, `commits`, `code_edits`, lines/bytes, estimated `active_minutes`) plus `active_days: [{day, active_minutes}]`; empty without the column. |
+| `/api/usage` | Array per `{date, agent, model_family}` with `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, derived `total_tokens`, nullable decimal-string `estimated_cost_usd`. Empty without M4 rollups. |
 | `/api/card.svg?theme=light` | Local rendered SVG; `theme` accepts `light` and `dark`. |
 | `/api/export.json` | `{summary, days, agents, usage, cost_label}`; defaults to the full local history. |
 | `/api/export.csv` | Daily language rows with the same six fields as `/api/days`; defaults to the full local history. |
@@ -79,31 +89,22 @@ Dates must be canonical `YYYY-MM-DD`, with `from <= to`. Duplicate parameters
 and unrecognized parameters return 400. Unknown routes return 404. Unavailable
 local data returns 503 without leaking paths or SQL error text.
 
-### Optional usage schema contract
+### Usage schema contract
 
-M4's final schema is not present in the M1 base. The dashboard recognizes, in
-priority order, `usage`, `usage_events`, `usage_daily`, or `daily_usage`. Only
-one is read, to avoid counting raw rows and rollups together. That table must
-have `agent`, `model`, and at least one recognized token column:
-
-- `input_tokens`, `output_tokens`, `total_tokens`, `reasoning_output_tokens`.
-- `cached_input_tokens` or `cache_read_input_tokens`.
-- `cache_write_input_tokens` or `cache_creation_input_tokens`.
-- Optional `cost_usd` or `estimated_cost_usd`, already computed by the producer.
-
-`total_tokens` is preferred when recorded. Otherwise it is input + output +
-cache write. Claude-style `cache_read_input_tokens` is added because it is
-separate from uncached input. Codex-style `cached_input_tokens` and reasoning
-output are subsets and are not added again. Missing token columns contribute
-zero. An unrelated table is ignored; malformed recognized data produces an
-error. The final M4 integration should confirm these field meanings.
+Only `usage_aggregates` is read, through `devcard_usage.read_usage` and its
+validated `export_usage` allowlist. Raw call tables and legacy provisional
+table names are ignored. M4's categories are disjoint: total tokens are normal
+input + output + cache read + cache write. Reasoning is already part of output.
+If any call in a bucket is unpriced, that bucket's estimate remains null.
+See [usage and pricing](usage-and-cost.md) for coverage limits.
 
 ## Local privacy boundary
 
 SQLite is opened with URI `mode=ro` and `PRAGMA query_only`, with a new
 connection and consistent transaction snapshot for each API response.
-There are no writes, schema migrations, hook changes, publishers or outbound
-network clients in this server. The single HTML, CSS and JS files use system
+The startup scan can add/update usage tables in an existing database; HTTP
+handlers do not write, migrate, invoke publishers or make outbound requests.
+The single HTML, CSS and JS files use system
 fonts, no CDN, telemetry or external assets. The browser makes same-origin
 requests only. Static routes are an explicit allowlist, never directory serving.
 
@@ -117,16 +118,14 @@ same machine can access local aggregate data while the server runs.
 
 ## Integration and verification
 
-Before shipping a wheel, include the three dashboard assets as package data:
+The wheel includes the three dashboard assets and the bundled offline price table:
 
 ```toml
 [tool.setuptools.package-data]
-devcard = ["dashboard/*.html", "dashboard/*.css", "dashboard/*.js"]
+devcard = ["dashboard/*", "prices.json"]
 ```
 
-Verify the built wheel contains them. The current M1 packaging configuration
-does not explicitly include non-Python assets; checkout serving does not have
-that limitation. This is an integration prerequisite, not a runtime dependency.
+No additional runtime dependency is required.
 
 ```sh
 python -m unittest discover -s hook -p "test_*.py" -v

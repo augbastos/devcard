@@ -25,7 +25,7 @@ import subprocess
 import time
 import warnings
 
-from . import config, data
+from . import config, data, usage
 from ._hook import lib
 from .render import render
 from .themes import theme_pair
@@ -312,8 +312,12 @@ def local_aggregate(cfg, now, repo_count_fn=None):
     """This machine's aggregate, from the hook's database."""
     conn = lib.init_db()
     try:
+        usage.scan_local(cfg, conn)
         count = (repo_count_fn or lib.repo_count)(conn)
-        return data.aggregate(conn, now, tz=cfg.get("timezone") or None, repo_count=count or 0)
+        card = cfg.get("card") if isinstance(cfg.get("card"), dict) else {}
+        return data.aggregate(conn, now, tz=cfg.get("timezone") or None, repo_count=count or 0,
+                              include_agents=card.get("show_agents") is True,
+                              include_usage=card.get("show_usage") is True)
     finally:
         conn.close()
 
@@ -326,6 +330,7 @@ def render_files(cfg, aggregates, now, avatar=None):
         badges=[b for b in cfg.get("badges") or [] if isinstance(b, dict) and "label" in b],
         pins=[{"repo": p["repo"], "note": p.get("note"), "stars": None}
               for p in cfg.get("pins") or [] if isinstance(p, dict) and "repo" in p],
+        card=cfg.get("card"),
     )
     light, dark = theme_pair(cfg["theme"])
     return {

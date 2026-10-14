@@ -25,6 +25,9 @@ by hash for a while, so treat anything published as published.
 | `repo_count` | `37` | One integer, as below |
 | `updated_at` | `1760000000` | When that machine's numbers last changed |
 | `format` | `1` | File format version |
+| `agents` | Per-agent counts, lines, bytes and estimated active minutes | Exact activity export: `claude-code`, `codex`, `git`, `unknown`; counts include events, commits and code edits. |
+| `active_minutes` | `{"2025-10-09": {"claude-code": 12}}` | Estimated minutes per day/agent, without session identifiers or raw timestamps. |
+| `usage` | Array of daily agent/model-family buckets | Exact [usage export allowlist](usage-and-cost.md#what-stays-on-the-machine), including token categories and nullable API-equivalent USD estimates. |
 
 The file name is the machine's random `source_id` (16 random bytes) — never a
 hostname, username or path. The JSON is built from SQL that names its columns
@@ -32,8 +35,12 @@ and never selects `project_key`, and a test checks the pushed bytes for the
 project path, the hostname and the username.
 
 `card.svg` and `card-dark.svg` show what the Worker's card showed (below), with
-one change: the date of the last change ("updated 2025-10-09") instead of "5min
-ago". `README.md` is fixed text.
+the date of the last change ("updated 2025-10-09") instead of "5min ago".
+`agents`, `active_minutes` and `usage` are published only when the matching opt-in
+card line is on (`card.show_agents`, `card.show_usage`; both default off). With
+them off, those aggregates stay in the local database and the dashboard.
+`"usage": false` skips new scans but retains previously collected aggregates.
+`README.md` is fixed text.
 
 What this publishes **beyond** the Worker's card: the per-machine split of those
 numbers, so how many machines you code on and how much on each, and lines per
