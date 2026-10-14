@@ -4,6 +4,8 @@ import os
 import re
 import sqlite3
 import time
+
+from devcard_activity import AGENTS, normalize_agent
 # urllib.request is imported lazily inside send_to_worker — it costs ~150ms to
 # import and the hot capture path (hook per tool call) never needs it.
 
@@ -16,6 +18,17 @@ WORKER_URL_PATH = os.path.normpath(os.path.expanduser("~/.claude/devcard/worker-
 # Written by `devcard init`. Its presence means this machine publishes the card
 # itself (the `devcard` package) instead of syncing to a Worker.
 CONFIG_PATH = os.path.normpath(os.path.expanduser("~/.claude/devcard/config.json"))
+
+MODE_PATH = os.path.normpath(os.path.expanduser("~/.claude/devcard/mode"))
+
+
+def capture_mode(path=None):
+    """Read the installed capture mode; a missing marker keeps legacy defaults."""
+    try:
+        with open(MODE_PATH if path is None else path, encoding="utf-8") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return None
 
 
 def _load_worker_url():
@@ -311,7 +324,7 @@ def parse_event(payload):
         return {
             "ts": now, "language": language, "lines_added": count_lines(content),
             "lines_removed": 0, "bytes_added": len(content.encode("utf-8", errors="replace")),
-            "event_type": "write", "project_key": cwd,
+            "event_type": "write", "project_key": cwd, "agent": "claude-code",
         }
 
     if tool_name == "Edit":
@@ -324,7 +337,7 @@ def parse_event(payload):
         return {
             "ts": now, "language": language, "lines_added": count_lines(new_string),
             "lines_removed": count_lines(old_string), "bytes_added": len(new_string.encode("utf-8", errors="replace")),
-            "event_type": "edit", "project_key": cwd,
+            "event_type": "edit", "project_key": cwd, "agent": "claude-code",
         }
 
     if tool_name == "Bash":
@@ -333,7 +346,7 @@ def parse_event(payload):
             return {
                 "ts": now, "language": None, "lines_added": 0,
                 "lines_removed": 0, "bytes_added": 0,
-                "event_type": "commit", "project_key": cwd,
+                "event_type": "commit", "project_key": cwd, "agent": "claude-code",
             }
         return None
 
@@ -397,6 +410,30 @@ def _add_source_id_column(conn):
         raise
 
 
+def _add_agent_column(conn):
+    """Add nullable attribution once, without guessing the origin of old rows.
+
+    Take the write lock before checking the schema: concurrent hook processes
+    may both open a pre-M2 database. Existing NULL rows read as unknown in the
+    aggregate, and no counts, identities or sync flags are rewritten.
+    """
+    if any(row[1] == "agent" for row in conn.execute("PRAGMA table_info(events)")):
+        return
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(events)")}
+        if "agent" not in columns:
+            allowed = ", ".join("'" + agent + "'" for agent in AGENTS)
+            conn.execute(
+                "ALTER TABLE events ADD COLUMN agent TEXT "
+                f"CHECK (agent IS NULL OR agent IN ({allowed}))"
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def init_db(db_path=None):
     """Open (creating if needed) the local SQLite db and ensure its schema exists.
 
@@ -414,6 +451,16 @@ def init_db(db_path=None):
     if installation_db and not os.path.exists(db_path):
         _retire_source_id()
     conn = sqlite3.connect(db_path)
+    try:
+        _init_db_schema(conn)
+    except Exception:
+        conn.close()
+        raise
+    return conn
+
+
+def _init_db_schema(conn):
+    """Initialize schema on an owned connection; init_db closes it on failure."""
     conn.execute("""
         CREATE TABLE IF NOT EXISTS events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -433,6 +480,7 @@ def init_db(db_path=None):
     except sqlite3.OperationalError:
         pass  # column already exists (fresh dbs get it from CREATE TABLE)
     _add_source_id_column(conn)
+    _add_agent_column(conn)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS known_repos (
             project_key TEXT PRIMARY KEY,
@@ -448,7 +496,6 @@ def init_db(db_path=None):
         "CREATE INDEX IF NOT EXISTS idx_events_unsynced ON events(id) WHERE synced = 0"
     )
     conn.commit()
-    return conn
 
 
 def insert_event(conn, event):
@@ -464,12 +511,15 @@ def insert_event(conn, event):
     job. Until it has, rows land with a NULL namespace; they are held back from
     sending and stamped by `sync_pending` rather than guessed at.
     """
+    agent = event.get("agent")
+    if agent is not None and normalize_agent(agent) != agent:
+        raise ValueError("unsupported event agent")
     cur = conn.execute(
-        "INSERT INTO events (ts, language, lines_added, lines_removed, bytes_added, event_type, project_key, source_id) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO events (ts, language, lines_added, lines_removed, bytes_added, event_type, project_key, source_id, agent) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (event["ts"], event["language"], event["lines_added"], event["lines_removed"],
          event.get("bytes_added", 0), event["event_type"], event["project_key"],
-         event.get("source_id") or read_source_id() or None),
+         event.get("source_id") or read_source_id() or None, agent),
     )
     if is_trackable_project(event["project_key"]):
         conn.execute(

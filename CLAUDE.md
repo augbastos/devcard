@@ -30,6 +30,9 @@ commits and pull requests — not here.
 | `hook/install_claude_hook.py` | Registers the capture hook in Claude Code's settings.json. Shared by both installers. |
 | `devcard/data.py` | Per-machine aggregate from the local SQLite, merge across machines, heatmap/streak. |
 | `devcard/render.py`, `svg.py`, `themes.py`, `strings.py`, `jsfmt.py` | Pure Python port of the Worker's renderers. |
+| `hook/devcard_activity.py` | Per-agent attribution helpers and active-time estimate from event gaps. |
+| `hook/devcard_usage.py` | Tokens and API-equivalent cost from local Claude Code / Codex logs; price table in `devcard/prices.json`. |
+| `devcard/serve.py`, `devcard/dashboard/` | `devcard serve`: read-only local dashboard on 127.0.0.1. |
 | `devcard/publish.py` | `render`/`publish`: git plumbing in a private bare repo, debounce, lease, avatar cache. |
 | `devcard/cli.py`, `config.py` | `devcard init/render/publish/status`; `~/.claude/devcard/config.json`. |
 | `pyproject.toml` | `pipx install git+https://github.com/augbastos/devcard`. Ships `devcard/` plus the hook modules as top-level modules. |
@@ -167,9 +170,9 @@ Version floors live in two places: `MIN_PYTHON` in `install.py` and
 ## Repository rules
 
 - `main` is protected: pull request, squash merge, required checks (`ci-ok`,
-  `secrets`, `dependencies`, `verify`). No direct pushes, no force pushes.
-- Every pull request carries an AI-use disclosure, or `verify` fails: tick a box
-  in the template or add an `Assisted-by:` trailer.
+  `secrets`, `dependencies`). No direct pushes, no force pushes.
+- Every pull request carries an AI-use disclosure: tick a box in the template or add
+  an `Assisted-by:` trailer.
 - Actions are pinned by commit SHA with the version in a comment; keep it that way.
 - Never commit `worker/wrangler.jsonc`, `.dev.vars*`, `.env*`, `*.db`, `.wrangler/`
   or `docs/superpowers/`.

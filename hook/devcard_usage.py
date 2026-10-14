@@ -26,7 +26,11 @@ MODEL_FAMILIES = frozenset({
 AGENTS = frozenset({"claude", "codex"})
 TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens")
 PUBLIC_FIELDS = ("date", "agent", "model_family", *TOKEN_FIELDS, "estimated_cost_usd")
-PRICES_PATH = Path(__file__).with_name("prices.json")
+_HERE = Path(__file__).resolve().parent
+# The price table ships inside the `devcard` package: next to this file when installed
+# (site-packages), one level up in a checkout (hook/ beside devcard/).
+PRICES_PATH = next((p for p in (_HERE / "devcard" / "prices.json", _HERE.parent / "devcard" / "prices.json")
+                    if p.exists()), _HERE.parent / "devcard" / "prices.json")
 MAX_LINE_BYTES = 4 * 1024 * 1024
 
 # Exact spellings only. A free-form model field can itself carry private text.
