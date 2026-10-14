@@ -7,9 +7,15 @@
 > renderer also produces the golden SVGs the Python renderer is held to
 > (`test/golden.test.ts` → `../tests/golden/`).
 
-The backend: `POST /ingest` (called by the local hook), `GET /svg` (the public
-card), `GET /embed` (the hoverable README block), and a nightly cron that
-rebuilds the rollups.
+Temporary compatibility redirect, approved for three months: `GET /svg` returns
+301 to `devcard-data/card.svg` on raw.githubusercontent.com (`theme=dark` selects
+`card-dark.svg`), cached for one hour. Other query parameters are ignored.
+`GET /`, `/embed` (including subpaths), and `.html` routes redirect to
+https://github.com/augbastos/devcard. At `RETIRE_AT` (2027-01-14 00:00 UTC),
+`/svg` starts returning 410 Gone. HEAD follows the same status and headers.
+`POST /ingest`, its fail-closed authentication, and the nightly rollup rebuild
+remain unchanged, including after that date. Retained renderers and golden
+tests use a test-only rendering harness instead of the public routes.
 
 ## Working on it
 

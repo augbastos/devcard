@@ -1,6 +1,6 @@
 import { SELF } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { resetDb, ev, ingestRequest } from "./helpers";
+import { resetDb, ev, ingestRequest, renderLegacy } from "./helpers";
 
 async function ingest(events: ReturnType<typeof ev>[]): Promise<void> {
   const res = await SELF.fetch(
@@ -10,7 +10,7 @@ async function ingest(events: ReturnType<typeof ev>[]): Promise<void> {
 }
 
 const card = async (query = "") =>
-  (await SELF.fetch(`https://card.example/svg${query}`)).text();
+  (await renderLegacy(`https://card.example/svg${query}`)).text();
 
 describe("capture-mode semantics", () => {
   beforeEach(async () => {
