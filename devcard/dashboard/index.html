@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>devcard · local dashboard</title>
+  <link rel="stylesheet" href="/dashboard.css">
+  <script src="/dashboard.js" defer></script>
+</head>
+<body>
+  <main>
+    <header>
+      <div><p class="eyebrow">devcard / on this machine</p><h1>Your coding activity</h1>
+      <p class="muted">Read-only local history. No account, telemetry or external requests.</p></div>
+      <button id="refresh" type="button">Refresh</button>
+    </header>
+    <p id="status" role="status" aria-live="polite">Loading local activity…</p>
+    <section class="stats" aria-label="All-time totals">
+      <div><span>Lines added</span><strong id="lines">—</strong></div>
+      <div><span>Bytes added</span><strong id="bytes">—</strong></div>
+      <div><span>Current streak</span><strong id="streak">—</strong></div>
+      <div><span>Local repositories</span><strong id="repos">—</strong></div>
+    </section>
+    <p class="muted" id="counting">Edit/write actions and commit diffs are different units. Capture one mode per machine.</p>
+    <section class="panel" aria-labelledby="languages-title">
+      <h2 id="languages-title">Languages <small>all time · lines added</small></h2>
+      <div id="language-bar" class="language-bar" aria-label="Language proportions"></div>
+      <ul id="language-legend" class="legend"></ul>
+    </section>
+    <section class="panel" aria-labelledby="heatmap-title">
+      <h2 id="heatmap-title">Last 16 weeks <small id="timezone"></small></h2>
+      <p class="muted">Select a day to inspect its language totals. A commit-only day can extend your streak.</p>
+      <div class="heat-layout"><div class="weekdays" aria-hidden="true"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div><div id="heatmap" class="heatmap"></div></div>
+      <div class="heat-legend" aria-label="Heatmap intensity: less to more lines"><span>Less</span><i class="level-0"></i><i class="level-1"></i><i class="level-2"></i><i class="level-3"></i><i class="level-4"></i><span>More</span></div>
+    </section>
+    <section class="panel" aria-labelledby="daily-title">
+      <h2 id="daily-title">Daily activity <small>lines added</small></h2>
+      <form id="range"><label>From <input id="from" type="date" required></label><label>To <input id="to" type="date" required></label><button type="submit">Apply</button></form>
+      <svg id="chart" viewBox="0 0 800 180" role="img" aria-label="Daily lines added chart"></svg>
+      <p id="chart-caption" class="muted"></p>
+      <details><summary>Daily numbers by language</summary><div class="table-scroll"><table><caption id="daily-caption">Daily activity</caption><thead><tr><th scope="col">Day</th><th scope="col">Language</th><th scope="col">Lines added</th><th scope="col">Lines removed</th><th scope="col">Bytes added</th></tr></thead><tbody id="daily-rows"></tbody></table></div></details>
+      <p class="exports"><a id="csv-export" href="/api/export.csv" download="devcard.csv">Export CSV</a><a id="json-export" href="/api/export.json" download="devcard.json">Export JSON</a></p>
+    </section>
+    <section class="panel" aria-labelledby="agents-title">
+      <h2 id="agents-title">Agents <small>all time · attribution is a heuristic</small></h2>
+      <div class="table-scroll"><table><caption class="sr-only">Totals per agent</caption><thead><tr><th scope="col">Agent</th><th scope="col">Lines added</th><th scope="col">Lines removed</th><th scope="col">Bytes added</th><th scope="col">Events</th></tr></thead><tbody id="agent-rows"></tbody></table></div>
+      <p id="agent-empty" class="muted" hidden>Agent attribution is not available in this database yet.</p>
+    </section>
+    <section class="panel" aria-labelledby="usage-title">
+      <h2 id="usage-title">Tokens &amp; cost <small>all time</small></h2>
+      <p>API-equivalent cost (estimate; not your subscription bill)</p>
+      <div class="table-scroll"><table><caption class="sr-only">Recorded tokens and estimated US dollar cost per agent and model</caption><thead><tr><th scope="col">Agent / model</th><th scope="col">Input</th><th scope="col">Output</th><th scope="col">Cached input</th><th scope="col">Cache write</th><th scope="col">Reasoning output</th><th scope="col">Total tokens</th><th scope="col">Estimate (USD)</th></tr></thead><tbody id="usage-rows"></tbody></table></div>
+      <p id="usage-empty" class="muted" hidden>No recorded usage is available yet. Unknown prices remain unavailable.</p>
+    </section>
+    <section class="panel" aria-labelledby="preview-title"><h2 id="preview-title">Local card preview</h2>
+      <picture><source media="(prefers-color-scheme: dark)" srcset="/api/card.svg?theme=dark"><img id="preview" src="/api/card.svg?theme=light" alt="devcard rendered from this machine’s activity"></picture>
+      <p class="muted">Uses the existing renderer and local totals. Published cards may also include other machines.</p>
+    </section>
+    <footer>History stays on this machine. This dashboard does not measure editor time or infer a subscription bill.</footer>
+  </main>
+</body>
+</html>
