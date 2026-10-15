@@ -14,7 +14,7 @@ import time
 
 from . import __version__, config
 from ._hook import hook_script, lib
-from .publish import MIN_INTERVAL, PublishError, publish, render_local
+from .publish import MIN_INTERVAL, PublishError, publish, render_local, unpublish
 from .render import LAYOUTS
 from .strings import STRINGS
 from .themes import THEMES
@@ -175,6 +175,17 @@ class Init:
         user, repo = self.identity(gh, cfg)
         mode = self.capture()
 
+        self.out("\nPublication consent (each category defaults to No)")
+        consent = dict(config.NO_CONSENT)
+        requested = self.args.consent or []
+        for key, description in config.CONSENT_CATEGORIES.items():
+            self.out(f"  {key}: {description}")
+            if key in requested:
+                consent[key] = True
+            elif not self.args.yes:
+                consent[key] = self.ask(f"  Publish {key}? [y/N]: ").lower() in ("y", "yes")
+        cfg["consent"] = consent
+
         self.out("\n[4/5] Saving settings")
         cfg.update({"github_user": user, "repo": repo})
         for key in ("layout", "theme", "lang", "remote"):
@@ -184,11 +195,13 @@ class Init:
         config.save(cfg)
         self.out(f"  {lib.CONFIG_PATH}")
         if lib.WORKER_INGEST_URL:
-            self.out("  note: this machine also syncs to a devcard Worker (legacy). It keeps doing so;")
-            self.out("  remove ~/.claude/devcard/worker-url once the Worker card is retired.")
+            self.out("  note: legacy Worker sync requires languages, activity, totals and repo_count consent;")
+            self.out("  partial consent holds legacy events locally. Remove worker-url to retire that sync.")
 
         self.out("\n[5/5] Publishing")
-        publish_now = self.args.yes or (self.ask("  Publish the card now? [Y/n]: ").lower() not in ("n", "no"))
+        publish_now = config.has_consent(cfg) and (self.args.yes or (self.ask("  Publish the card now? [Y/n]: ").lower() not in ("n", "no")))
+        if not config.has_consent(cfg):
+            self.out("  No categories authorized; publication is paused. Use `devcard privacy --grant <category>`.")
         if publish_now:
             try:
                 status = publish(cfg, force=True)
@@ -227,6 +240,70 @@ def cmd_render(args):
         print(path)
     print("(this machine only — `devcard publish` renders every machine's numbers together)")
     return 0
+
+
+def cmd_privacy(args):
+    cfg = config.load()
+    if cfg is None:
+        print("not configured — run `devcard init`")
+        return 1
+    consent = config.consents(cfg)
+    for category in args.grant or []:
+        consent[category] = True
+    for category in args.revoke or []:
+        consent[category] = False
+    cfg["consent"] = consent
+    config.save(cfg)
+    for category, description in config.CONSENT_CATEGORIES.items():
+        print(f"{category}: {'granted' if consent[category] else 'denied'} — {description}")
+    authorized = [key for key, value in consent.items() if value and key != "repo_count_private"]
+    print("Publication allowlist: " + (", ".join(authorized) or "nothing (paused)"))
+    print("Machine JSON includes authorized data even when a card display toggle hides it.")
+    state = {}
+    try:
+        import json
+
+        with open(config.state_path(), encoding="utf-8") as f:
+            state = json.load(f)
+    except (OSError, ValueError):
+        pass
+    print("Last successful publication: " + (str(state.get("last_push")) if state.get("last_push") else "not recorded locally"))
+    published = state.get("published_consent")
+    if isinstance(published, dict):
+        print("Last published categories (local record): " + (", ".join(
+            key for key in config.CONSENT_CATEGORIES if key != "repo_count_private" and published.get(key) is True
+        ) or "none"))
+    else:
+        print("Published categories: unknown (no local record; current allowlist is not remote proof).")
+    print("Other machines and older cached files may still expose previously published data.")
+    if args.grant or args.revoke:
+        if args.grant and not config.has_consent(cfg):
+            print("Private-count opt-in saved; publication remains paused until a data category is granted.")
+            return 0
+        try:
+            status = publish(cfg, force=True) if config.has_consent(cfg) else unpublish(cfg)
+        except PublishError as exc:
+            print(f"privacy saved locally; remote update failed: {exc}. Retry `devcard publish --force` or `devcard unpublish`.")
+            return 1
+        print(status)
+    return 0
+
+
+def cmd_unpublish(_args):
+    try:
+        print(unpublish(config.load()))
+    except PublishError as exc:
+        print(f"devcard unpublish: {exc}")
+        return 1
+    print("Automatic publication disabled. GitHub may keep old raw files cached for a while.")
+    return 0
+
+
+def _consent_list(value):
+    categories = value.split(",")
+    if any(key not in config.CONSENT_CATEGORIES for key in categories):
+        raise argparse.ArgumentTypeError("unknown consent category; choose " + ", ".join(config.CONSENT_CATEGORIES))
+    return categories
 
 
 def cmd_publish(args):
@@ -293,7 +370,8 @@ def build_parser():
     p.add_argument("--remote", help="git URL to push to instead of https://github.com/<repo>.git")
     p.add_argument("--mode", choices=("claude", "git"), help="capture mode for this machine")
     p.add_argument("--git-folder", action="append", help="(git mode) a repo or folder of repos; repeatable")
-    p.add_argument("--yes", "-y", action="store_true", help="accept defaults and publish without asking")
+    p.add_argument("--yes", "-y", action="store_true", help="accept setup defaults; never grants publication consent")
+    p.add_argument("--consent", type=_consent_list, help="comma-separated categories to explicitly authorize")
     card_options(p)
     p.set_defaults(func=lambda a: Init(a).main())
 
@@ -313,6 +391,15 @@ def build_parser():
 
     p = sub.add_parser("status", help="show the configuration and the README embed")
     p.set_defaults(func=cmd_status)
+
+    p = sub.add_parser("privacy", help="show publication consents and grant/revoke categories")
+    group = p.add_mutually_exclusive_group()
+    group.add_argument("--grant", choices=tuple(config.CONSENT_CATEGORIES), action="append")
+    group.add_argument("--revoke", choices=tuple(config.CONSENT_CATEGORIES), action="append")
+    p.set_defaults(func=cmd_privacy)
+
+    p = sub.add_parser("unpublish", help="disable publication and delete the verified devcard-owned branch")
+    p.set_defaults(func=cmd_unpublish)
 
     from .serve import DEFAULT_PORT, cmd_serve
 

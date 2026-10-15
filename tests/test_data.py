@@ -25,7 +25,7 @@ class AggregateTest(TempDirTest):
             for e in events:
                 lib.insert_event(conn, {"lines_removed": 0, "bytes_added": 0, "project_key": PROJECT,
                                         "source_id": "testsource", **e})
-            return data.aggregate(conn, NOW, tz=tz, repo_count=4)
+            return data.aggregate(conn, NOW, tz=tz, repo_count=4, consent=data.CORE_CATEGORIES)
         finally:
             conn.close()
 
@@ -63,6 +63,21 @@ class AggregateTest(TempDirTest):
 
 
 class MergeTest(unittest.TestCase):
+    def test_legacy_language_counts_contribute_alongside_explicit_line_totals(self):
+        merged = data.merge([agg(languages={"Rust": 5}), agg(languages={"Python": 7}, lines=7)], now=NOW)
+        self.assertEqual(merged["lines"], 12)
+        self.assertEqual(data.card_data(merged, "octo-cat", NOW, tz="UTC").total_lines, 12)
+        self.assertNotIn("lines", data.merge([{"format": 1, "language_percentages": {"Rust": 100}}]))
+
+    def test_absent_categories_are_valid_but_malformed_present_fields_are_rejected(self):
+        self.assertEqual(data.merge([{"format": 1}], now=NOW), {})
+        invalid = {"agents": ["codex"], "active_minutes": {"2025-10-09": {"codex": True}},
+                   "usage": None, "languages": None, "days": [], "events": True,
+                   "repo_count": -1, "repo_count_private": 1}
+        for key, value in invalid.items():
+            with self.subTest(key=key), self.assertWarns(RuntimeWarning):
+                self.assertEqual(data.merge([{"format": 1, key: value}], now=NOW), {})
+
     def test_out_of_range_or_non_integer_timestamps_skip_the_whole_file(self):
         for key in ("first_ts", "updated_at"):
             for value in (10**100, int(time.time()) + 86401, 1577836799, True, "now", 1.5):

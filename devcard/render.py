@@ -49,7 +49,7 @@ def render(data, theme="default", lang="en", layout="full", now=0, all_langs=Fal
     """
     svg = _render_base(data, theme, lang, layout, now, all_langs, static)
     lines = []
-    if data.show_agents:
+    if data.show_agents and "agents" in data.sections:
         totals = sorted(data.agent_totals.items(), key=lambda r: (-r[1]["lines_added"], r[0]))
         total = sum(row["lines_added"] for _, row in totals)
         labels = {"claude-code": "Claude Code", "codex": "Codex", "git": "git", "unknown": "Unknown"}
@@ -61,7 +61,7 @@ def render(data, theme="default", lang="en", layout="full", now=0, all_langs=Fal
                         else f"{data.active_minutes / 60:.1f}".removesuffix(".0") + "h")
             line += f" · {duration} active (est.)"
         lines.append(line)
-    if data.show_usage:
+    if data.show_usage and "usage" in data.sections:
         tokens = sum(sum(row[name] for name in ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"))
                      for row in data.usage)
         costs = [row["estimated_cost_usd"] for row in data.usage]
@@ -80,7 +80,7 @@ def render(data, theme="default", lang="en", layout="full", now=0, all_langs=Fal
     svg = svg.replace(f'height="{num(height - 1)}" rx=', f'height="{num(new_height - 1)}" rx=', 1)
     extra = "".join(
         f'<text class="mut" x="24" y="{num(height + 13 + i * 22)}" {SANS} font-size="10">'
-        f'<title>{escape_xml("Share of recorded lines added; activity estimate (concurrent agents counted independently): " + line if data.show_agents and i == 0 else line + " (estimate; not your subscription bill)")}</title>'
+        f'<title>{escape_xml("Share of recorded lines added; activity estimate (concurrent agents counted independently): " + line if data.show_agents and "agents" in data.sections and i == 0 else line + " (estimate; not your subscription bill)")}</title>'
         f'{escape_xml(truncate(line, int((width - 48) / 5.5)))}</text>'
         for i, line in enumerate(lines)
     )
@@ -94,6 +94,8 @@ def _render_base(data, theme="default", lang="en", layout="full", now=0, all_lan
     """
     t = STRINGS[lang_name(lang)]
     tokens = theme if isinstance(theme, dict) else THEMES[theme_name(theme)]
+    if not {"languages", "activity", "totals", "repo_count"} <= data.sections:
+        return render_sections(data, tokens, t, layout, now, static)
     if layout == "wide":
         return render_wide(data, tokens, t, now, all_langs, static)
     if layout == "banner":
@@ -103,6 +105,79 @@ def _render_base(data, theme="default", lang="en", layout="full", now=0, all_lan
     if layout == "vertical":
         return render_vertical(data, tokens, t)
     return render_full(data, tokens, t, now, all_langs, static)
+
+
+def render_sections(data, theme, t, layout, now, static):
+    """Existing card primitives, stacked without gaps for missing sections.
+
+    The complete legacy card keeps its original render path and golden bytes.
+    Presence comes from the aggregate, never from a consent check in the SVG.
+    """
+    W = {"wide": 840, "banner": 840, "half": 420, "vertical": 320}.get(layout, 480)
+    PAD, y = 24, 84
+    inner = W - PAD * 2
+    user = escape_xml(data.github_user)
+    avatar = (f'<clipPath id="av"><circle cx="42" cy="36" r="17"/></clipPath>'
+              f'<image href="{escape_xml(data.avatar)}" x="25" y="19" width="34" height="34" clip-path="url(#av)"/>'
+              if data.avatar else
+              f'<circle class="pill" cx="42" cy="36" r="17"/><text class="mut" x="42" y="41" {SANS} '
+              f'font-size="14" text-anchor="middle">{_initial(data)}</text>')
+    parts = [avatar, f'<text class="txt" x="68" y="32" {SANS} font-size="15" font-weight="700">devcard</text>',
+             f'<text class="mut" x="68" y="50" {MONO} font-size="12">@{escape_xml(truncate(data.github_user, 28 if W < 480 else 39))}</text>']
+
+    def line(text, cls="mut", size=12):
+        nonlocal y
+        parts.append(f'<text class="{cls}" x="{PAD}" y="{y}" {MONO} font-size="{size}">{escape_xml(text)}</text>')
+        y += 22
+
+    if "repo_count" in data.sections:
+        parts.append(f'<a href="https://github.com/{user}?tab=repositories" target="_blank">'
+                     f'<text class="link" x="{W - PAD}" y="32" {MONO} font-size="12" text-anchor="end">'
+                     f'{data.repo_count} {escape_xml(t["repos"])} →</text></a>')
+    if "totals" in data.sections:
+        parts.append(f'<text class="txt" x="{PAD}" y="{y}" {MONO} font-size="18">'
+                     f'{fmt_count(data.total_lines, t["dec"])}<tspan class="mut" {SANS} font-size="12">'
+                     f' {escape_xml(t["lines"])} ({fmt_bytes(data.total_bytes, t["dec"])})</tspan></text>')
+        y += 22
+        line(f'{data.total_actions} {t["edits"]} · {data.total_commits} {t["commits"]}')
+    if "languages" in data.sections:
+        total = data.language_total
+        geo = {"x": PAD, "y": y - 4, "width": inner, "height": 12,
+               "clampLeft": PAD, "clampRight": W - PAD}
+        parts.append(language_bar_segments(data.languages, total, geo, "barclip"))
+        y += 30
+        for s in with_other_bucket(data.languages):
+            pct = to_fixed(s.total / total * 100, 1) if total else "0.0"
+            parts.append(f'<circle cx="{PAD + 5}" cy="{y - 4}" r="4.5" fill="{slice_color(s)}"/>')
+            parts.append(f'<text class="txt" x="{PAD + 17}" y="{y}" {SANS} font-size="12.5">'
+                         f'{escape_xml(slice_label(s, t["other"]))}<tspan class="mut" {MONO}> {pct}%</tspan></text>')
+            y += 22
+        y += 10
+    if "activity" in data.sections:
+        line(f'{data.streak} {t["dayStreak"]}')
+        heat, height = render_heatmap(data, PAD, y - 6, 8, 2)
+        parts.append(heat)
+        y += height + 18
+    # Manually configured profile decoration is independent of collected stats.
+    pills = _Pills(PAD, W - PAD, y)
+    _add_pills(pills, data)
+    for pin in data.pins:
+        pills.add(pin["repo"], REPO_ICON,
+                  href=f'https://github.com/{user}/{escape_xml(pin["repo"])}')
+    if pills.parts:
+        parts.extend(pills.parts)
+        y += (pills.row + 1) * 28
+    prov = provenance(data, t, now, static)
+    if prov:
+        # Separate provenance parts on narrow cards instead of clipping text.
+        for part in prov.split(" · "):
+            line(part, "faint", 9.5)
+    H = max(72, y + 2)
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" '
+            f'role="img" aria-label="devcard {user}">\n'
+            f'<style>{css_for(theme)}</style>\n'
+            f'<rect class="bg brd" x="0.5" y="0.5" width="{W - 1}" height="{H - 1}" rx="14" stroke-width="1"/>\n'
+            + "\n".join(parts) + "\n</svg>")
 
 
 def provenance(data, t, now, static):

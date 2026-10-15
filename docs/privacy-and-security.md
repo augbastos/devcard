@@ -1,9 +1,60 @@
 # Privacy and security
 
 devcard is **content-private**: code, file names, paths and project names stay on
-your machine. It is not *activity-private* — publishing your activity is what a
-stats card is for — so this page is precise about which activity leaves, and
-what a visitor can read from the card.
+your machine. Collected activity stays local until you explicitly authorize
+each publication category. A card and its machine JSON may reveal only the
+categories you grant; hiding a card section is not a privacy control.
+
+## Consent, review and removal
+
+All six categories in `config.json`'s `consent` object default to `false`:
+
+| Category | Published information when granted |
+|---|---|
+| `languages` | Language names and percentages; absolute language counts require `totals` too |
+| `activity` | Lines per day, heatmap, streak and last update time |
+| `totals` | Lines, bytes, event counts/types and the first recorded timestamp |
+| `repo_count` | Number of public repositories owned on GitHub |
+| `agents` | Per-agent totals and estimated active minutes, including per-day agent buckets |
+| `usage` | Daily tokens and API-equivalent cost estimates by agent/model family; no log identifiers |
+
+`consent.repo_count_private: true` separately opts into including private
+repositories, and has no effect without `repo_count`. Only a literal JSON `true`
+grants consent; missing, malformed or unknown values do not. `format` and the
+random machine file name are publication metadata. Your chosen GitHub identity,
+avatar, manually configured badges and pins remain card configuration.
+
+`devcard init` describes each category and asks yes/no, default No. `--yes`
+never grants consent; use `--consent languages,activity` to explicitly authorize
+categories without prompts. `devcard privacy` displays the current allowlist
+and locally recorded publication status. `privacy --grant <category>` and
+`privacy --revoke <category>` save the choice and force a remote update. Denied
+fields are omitted from JSON, and missing sections are omitted from the card.
+`card.show_agents` and `card.show_usage` are display toggles: even when false,
+authorized agent/usage data is readable in machine JSON. Each line renders only
+when its data category is consented and its display toggle is on.
+
+Old configs without consent publish **nothing new**. Hooks keep capturing and
+write a one-line local notice to `errors.log` at most once a day; they never
+fail the tool or commit. Review choices with `privacy` or `init`. This migration
+does not automatically remove files that were already published.
+
+A revoke applies the same allowlist to every machine file carried into the
+new branch commit. Unknown/invalid machine files are removed rather than
+republished. Revoking the last category uses `unpublish`: it disables this
+machine's publication and deletes the whole `devcard-data` branch only after
+the existing ownership marker, layout, root history and default-branch checks
+pass. Foreign or default branches are refused. Failed remote cleanup leaves
+the denial saved locally and reports that cleanup needs a retry. Other
+machines have independent local settings; revoke or stop them as well to
+prevent later republication.
+
+**GitHub may keep old raw files cached or accessible by commit hash for a while
+after unpublish or revocation.** These operations do not guarantee immediate
+erasure, and cannot erase downloaded copies.
+
+The read-only dashboard (`devcard serve`, bound to `127.0.0.1`) continues to
+show all local data. It does not publish anything and needs no consent grants.
 
 ## The serverless card: what is published
 
@@ -13,16 +64,18 @@ by anyone. Each publish replaces the branch with a new single commit; the
 replaced commits are no longer on any branch, but GitHub may keep serving them
 by hash for a while, so treat anything published as published.
 
-`machines/<id>.json`, one per machine, exactly these fields:
+`machines/<id>.json`, one per machine, can contain these consented fields:
 
 | Field | Example | Notes |
 |---|---|---|
 | `languages` | `{"Python": 61234}` | Lines added per language, all time |
+| `language_percentages` | `{"Python": 75.0}` | Used instead of absolute counts when only languages are granted |
 | `event_types` | `{"edit": 812, "commit": 95}` | Count per event type, all time |
 | `days` | `{"2025-10-09": 412}` | Lines added per day, the last 126 days, in that machine's timezone |
-| `bytes`, `events` | `4182230`, `1043` | Totals |
+| `lines`, `bytes`, `events` | `61234`, `4182230`, `1043` | Totals |
 | `first_ts` | `1741000000` | Time of the machine's first recorded event |
 | `repo_count` | `37` | One integer, as below |
+| `repo_count_private` | `false` | Whether this count includes private repositories |
 | `updated_at` | `1760000000` | When that machine's numbers last changed |
 | `format` | `1` | File format version |
 | `agents` | Per-agent counts, lines, bytes and estimated active minutes | Exact activity export: `claude-code`, `codex`, `git`, `unknown`; counts include events, commits and code edits. |
@@ -36,9 +89,10 @@ project path, the hostname and the username.
 
 `card.svg` and `card-dark.svg` show what the Worker's card showed (below), with
 the date of the last change ("updated 2025-10-09") instead of "5min ago".
-`agents`, `active_minutes` and `usage` are published only when the matching opt-in
-card line is on (`card.show_agents`, `card.show_usage`; both default off). With
-them off, those aggregates stay in the local database and the dashboard.
+`agents` and `active_minutes` are published only with `consent.agents`; `usage`
+requires `consent.usage`. Both default to false. The optional card lines also
+require `card.show_agents` or `card.show_usage` (both default off); turning a
+line off does not remove authorized machine JSON.
 `"usage": false` skips new scans but retains previously collected aggregates.
 `README.md` is fixed text.
 
@@ -49,7 +103,7 @@ day as raw numbers rather than heatmap shades. Commits are authored as
 
 | Data | Local SQLite | Published to your repository |
 |---|---|---|
-| The aggregate fields above | computed locally | ✅ |
+| The aggregate fields above | computed locally | Only granted categories |
 | Individual events, timestamps of single edits | ✅ | ❌ (per-day totals only) |
 | Project names, working directories | ✅ | ❌ |
 | File names, code content | ❌ never stored | ❌ |
@@ -67,6 +121,14 @@ expected format and shape is skipped, language names longer than 32 characters
 are dropped, and every string is XML-escaped when rendered.
 
 ## The legacy Worker: what leaves your machine
+
+The legacy wire sends several categories together. Updated hooks hold events
+locally unless `languages`, `activity`, `totals` and `repo_count` are all
+explicitly granted. There is no partial legacy sync. The public repository
+count must be available; private repositories require their separate opt-in.
+The unchanged Worker may still serve data uploaded earlier; `unpublish` only
+removes the serverless Git branch, not historical Worker/D1 data. Retire that
+endpoint separately if it was previously configured.
 
 Each synced event is one row of exactly these fields:
 
@@ -105,7 +167,7 @@ IP address a sync comes from. The Worker does not read or store it.
 
 ## What the card shows
 
-Anyone who can load the card can read: total lines and bytes written, the
+With all corresponding categories authorized, a reader can see: total lines and bytes written, the
 language mix, commit, edit and event counts, the repository count, the date
 tracking started, a 16-week heatmap of lines **per day** (in your configured
 timezone), your streak, how long ago the last sync was ("updated 5min ago"),
@@ -116,16 +178,17 @@ the repositories you choose to pin.
 
 ## What the repository count counts
 
-It is the number of repositories you **own on GitHub** — public plus private —
-read locally through the `gh` CLI and shipped as a single integer. No GitHub
-token ever goes near the Worker. Because private repositories are included, a
-visitor following the card's `N repos →` link to your profile sees a shorter
-list than the number.
+It defaults to repositories you **own publicly on GitHub**, read locally via
+`gh api user`'s `public_repos`. Private repositories are added only when both
+`repo_count` and `repo_count_private` are granted. With that extra opt-in, a
+visitor following `N repos →` may see a shorter list than the number.
 
-If `gh` isn't installed or the call fails, the count falls back to the distinct
-**git repository roots** you have worked in. The raw count of working directories
-is never published: agent scratchpads, `node_modules` and a project's
-subfolders would each register as "a repo".
+If GitHub is unavailable, the public count is omitted: local git roots have
+unknown visibility and cannot substitute for it. A combined legacy cache is
+never reused as a public count. With private-count consent, the existing
+distinct local-root fallback remains available. Legacy machine counts of
+unknown visibility are omitted unless private counting is authorized. No
+GitHub token is published or sent to the Worker.
 
 ## Where the token lives
 

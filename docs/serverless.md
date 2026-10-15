@@ -17,6 +17,16 @@ hook ─> ~/.claude/devcard/events.db                      README.md
 
 ## When it publishes
 
+Publication first requires explicit category grants in `consent` (all default
+No). `init --yes` does not grant them. Use `devcard privacy` to review and
+`privacy --grant <category>` / `--revoke <category>` to update them. With no
+grants, hooks keep capture local and `publish` refuses. Missing sections are
+absent from the card, and only authorized fields enter machine JSON. Agent and
+usage lines each require both category consent and their `card.show_agents` or
+`card.show_usage` display toggle. A hidden line does not hide authorized JSON.
+Agent consent includes daily active minutes; usage consent includes daily
+agent/model-family token and cost buckets.
+
 - **Automatically, while you work.** The capture hooks already start a
   detached background process after an edit (claude mode) or a commit (git
   mode). On a machine set up with `devcard init`, that process runs `publish`,
@@ -54,7 +64,7 @@ On each machine, in `~/.claude/devcard/` (next to the hook's database):
 
 | File | What |
 |---|---|
-| `config.json` | Your GitHub username, the target `owner/name`, layout, theme, language, optional timezone, badges, pinned repos. Not secret; never published. Its presence is what makes the hooks publish. |
+| `config.json` | Your GitHub username, the target `owner/name`, layout, theme, language, optional timezone, badges, pinned repos. Not secret; never published. Its presence and category grants enable hook publication. |
 | `source-id` | This machine's random id (16 random bytes). Names its file on the branch. |
 | `events.db` | The hook's local database. Holds working directories; never published. |
 | `publish/<owner>__<name>/` | A private bare git repository publishing goes through. Safe to delete. |
@@ -67,21 +77,35 @@ On the branch `devcard-data` of the repository you chose:
 | Path | What |
 |---|---|
 | `card.svg`, `card-dark.svg` | The card, merged across every machine, for light and dark GitHub themes |
-| `machines/<id>.json` | One file per machine, written only by that machine |
+| `machines/<id>.json` | One file per machine; denied categories are also removed from carried files |
 | `README.md` | A note that the branch is generated |
 | `.devcard` | Ownership marker with format version 1 |
 
 ## Several machines
 
-Each machine writes **only its own** `machines/<id>.json`, and renders the card
-from all of them. Counts add up: lines, languages, events, lines per day. The
+Each machine updates its own `machines/<id>.json`, applies its consent allowlist
+to carried machine files, and renders the card from the remaining data.
+Revocation removes denied categories across machines; matching valid files
+otherwise stay byte-identical. Counts add up: lines, languages, events, lines per day. The
 repository count does not — every machine reads the same GitHub account, so the
 largest one is used. `first_ts` is the earliest, `updated_at` the latest.
+
+The repository count defaults to public repositories. Including private ones
+requires both `repo_count` and `repo_count_private`. A count with unknown
+visibility is omitted unless private counting is allowed. Language-only files
+contain percentages; when absolute counts are unavailable, the language mix
+averages the available machines equally instead of inventing line totals.
 
 Set every machine up with `devcard init` and the same repository. Machines that
 publish at the same moment cannot overwrite each other: each push is a
 `--force-with-lease` against the commit that machine read, and a lost race is
 redone on top of the winner's commit (up to three times).
+
+Consent settings remain local to each machine. Apply revocations everywhere,
+or stop other machines, so a machine with older grants cannot republish data.
+`devcard unpublish` disables publication on this machine and deletes only a
+verified devcard-owned branch. GitHub may keep old raw files cached or
+accessible by commit hash for a while afterward.
 
 A machine whose `events.db` is deleted gets a new id; its old file stays on the
 branch, so the work it recorded keeps counting. To drop a machine's numbers,
@@ -131,13 +155,17 @@ devcard init                 # checks, capture hook, target repo, first publish,
 devcard publish [--force]    # publish now (debounced unless --force)
 devcard render --out DIR     # this machine's card only, written locally; publishes nothing
 devcard status               # configuration, machine id, last push, embed snippet
+devcard privacy              # review or --grant/--revoke a publication category
+devcard unpublish            # disable publication and remove the owned data branch
 ```
 
 ## Migrating from the Worker
 
 Run `devcard init` on each machine. A machine that also has a Worker configured
-(`~/.claude/devcard/worker-url`) keeps syncing there as before, so both cards
-stay current while you switch your README to the `<picture>` embed. When the
+(`~/.claude/devcard/worker-url`) syncs there only when `languages`, `activity`,
+`totals` and `repo_count` are all granted and the repository count is available.
+Partial consent holds legacy events locally. Switch your README to the
+`<picture>` embed when ready. When the
 Worker card is no longer embedded anywhere, delete `worker-url` and `token` from
 each machine.
 

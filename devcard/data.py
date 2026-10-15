@@ -25,6 +25,7 @@ import warnings
 from .strings import MONTHS
 from ._hook import activity, usage as usage_hook
 from .usage import public_rows
+from . import config
 
 AGGREGATE_FORMAT = 1
 MIN_TIMESTAMP = 1577836800  # 2020-01-01 UTC
@@ -37,6 +38,34 @@ NAMED_LANGUAGES = 6
 OTHER_LANGUAGE = "\u0000other"
 AGENTS = activity.AGENTS
 AGENT_FIELDS = ("lines_added", "lines_removed", "bytes_added", "events", "commits", "code_edits")
+CATEGORY_FIELDS = {
+    "languages": ("languages", "language_percentages"),
+    "activity": ("days", "updated_at"),
+    "totals": ("lines", "bytes", "events", "first_ts", "event_types"),
+    "repo_count": ("repo_count", "repo_count_private"),
+    "agents": ("agents", "active_minutes"),
+    "usage": ("usage",),
+}
+CORE_CATEGORIES = {key: True for key in ("languages", "activity", "totals", "repo_count")}
+
+
+def consented(agg, consent=None):
+    """The publication boundary: a positive allowlist, never a raw-row redaction."""
+    allowed = config.consents({"consent": consent})
+    out = {"format": agg.get("format")}
+    for category, fields in CATEGORY_FIELDS.items():
+        if allowed[category]:
+            out.update({key: agg[key] for key in fields if key in agg})
+    if "languages" in out and not allowed["totals"]:
+        total = sum(out["languages"].values())
+        out["language_percentages"] = {
+            name: round(value / total * 100, 1) if total else 0 for name, value in out.pop("languages").items()
+        }
+    if "repo_count" in out and not allowed["repo_count_private"] and agg.get("repo_count_private") is not False:
+        # Old machine files counted private repos without recording provenance.
+        out.pop("repo_count", None)
+        out.pop("repo_count_private", None)
+    return out
 
 
 @dataclass
@@ -79,6 +108,8 @@ class CardData:
     show_agents: bool = False
     show_usage: bool = False
     active_minutes: object = None
+    sections: frozenset = field(default_factory=lambda: frozenset(CORE_CATEGORIES))
+    language_total: float = 0
 
 
 def day_fn(tz=None):
@@ -96,7 +127,7 @@ def day_fn(tz=None):
     return lambda ts: datetime.fromtimestamp(ts).date().isoformat()
 
 
-def aggregate(conn, now, tz=None, repo_count=0, include_agents=True, include_usage=True):
+def aggregate(conn, now, tz=None, repo_count=0, consent=None, repo_count_private=False):
     """This machine's rollups, from the hook's local SQLite.
 
     Every query names its columns; none can return `project_key`. The day
@@ -123,13 +154,11 @@ def aggregate(conn, now, tz=None, repo_count=0, include_agents=True, include_usa
     ):
         day = to_day(bucket)
         days[day] = days.get(day, 0) + int(lines)
-    total_bytes, events, first_ts = conn.execute(
-        "SELECT COALESCE(SUM(bytes_added), 0), COUNT(*), MIN(ts) FROM events"
+    total_bytes, events, first_ts, lines = conn.execute(
+        "SELECT COALESCE(SUM(bytes_added), 0), COUNT(*), MIN(ts), COALESCE(SUM(lines_added), 0) FROM events"
     ).fetchone()
-    # Agent totals and token/cost usage are opt-in for the PUBLISHED file: they only
-    # leave the machine when the matching card line is switched on.
-    exported_activity = activity_rows(conn, tz) if include_agents else {}
-    return {
+    allowed = config.consents({"consent": consent})
+    agg = {
         "format": AGGREGATE_FORMAT,
         "languages": dict(sorted(languages.items())),
         "event_types": dict(sorted(event_types.items())),
@@ -138,10 +167,13 @@ def aggregate(conn, now, tz=None, repo_count=0, include_agents=True, include_usa
         "events": int(events),
         "first_ts": None if first_ts is None else int(first_ts),
         "repo_count": int(repo_count),
+        "repo_count_private": repo_count_private,
+        "lines": int(lines),
         "updated_at": int(now),
-        **exported_activity,
-        **({"usage": public_rows(conn)} if include_usage else {}),
+        **(activity_rows(conn, tz) if allowed["agents"] else {}),
+        **({"usage": public_rows(conn)} if allowed["usage"] else {}),
     }
+    return consented(agg, consent)
 
 
 def activity_rows(conn, tz=None):
@@ -163,13 +195,23 @@ def _validate_aggregate(agg, now):
     """Validate a whole machine file before any of its values reach rendering."""
     if not isinstance(agg, dict) or type(agg.get("format")) is not int or agg["format"] != AGGREGATE_FORMAT:
         raise ValueError("unsupported format")
+    if set(agg) - {"format", *(key for fields in CATEGORY_FIELDS.values() for key in fields)}:
+        raise ValueError("unexpected aggregate field")
+    if "repo_count_private" in agg and type(agg["repo_count_private"]) is not bool:
+        raise ValueError("invalid repository count provenance")
     for key in ("first_ts", "updated_at"):
+        if key not in agg:
+            continue
         value = agg.get(key)
+        if key == "updated_at" and type(value) is int and value == 0:
+            continue  # Legacy golden fixture: never synced.
         if key == "first_ts" and value is None:
             continue
         if type(value) is not int or not MIN_TIMESTAMP <= value <= now + 86400:
             raise ValueError(f"invalid {key}")
-    for key in ("bytes", "events", "repo_count"):
+    for key in ("lines", "bytes", "events", "repo_count"):
+        if key not in agg:
+            continue
         value = agg.get(key)
         if type(value) is not int or not 0 <= value <= 2**63 - 1:
             raise ValueError(f"invalid {key}")
@@ -202,16 +244,20 @@ def _validate_aggregate(agg, now):
         usage_hook.export_usage(rows)
     except (ValueError, TypeError, KeyError, AttributeError):
         raise ValueError("invalid usage") from None
-    for key in ("languages", "event_types", "days"):
+    for key in ("languages", "language_percentages", "event_types", "days"):
+        if key not in agg:
+            continue
         table = agg.get(key)
         if not isinstance(table, dict):
             raise ValueError(f"invalid {key}")
         for name, value in table.items():
-            if type(value) is not int or not 0 <= value <= 2**63 - 1:
+            valid = (type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 100
+                     if key == "language_percentages" else type(value) is int and 0 <= value <= 2**63 - 1)
+            if not valid:
                 raise ValueError(f"invalid {key} count")
             if not isinstance(name, str):
                 raise ValueError(f"invalid {key} name")
-            if key == "languages" and not LANGUAGE_RE.fullmatch(name):
+            if key in ("languages", "language_percentages") and not LANGUAGE_RE.fullmatch(name):
                 raise ValueError("invalid language name")
             if key == "event_types" and name not in ("edit", "write", "diff", "commit"):
                 raise ValueError("invalid event type")
@@ -234,8 +280,7 @@ def merge(aggregates, now=None):
     repository anyone with push access could edit.
     """
     now = int(time.time() if now is None else now)
-    out = {"languages": {}, "event_types": {}, "days": {}, "bytes": 0, "events": 0,
-           "first_ts": None, "repo_count": 0, "updated_at": 0, "agents": {}, "active_minutes": {}, "usage": []}
+    out = {}
     usage_buckets = {}
     for agg in aggregates:
         try:
@@ -243,20 +288,32 @@ def merge(aggregates, now=None):
         except ValueError as exc:
             warnings.warn(f"Skipping invalid machine aggregate: {exc}", RuntimeWarning, stacklevel=2)
             continue
-        for key in ("languages", "event_types", "days"):
+        for key in ("languages", "language_percentages", "event_types", "days"):
             table = agg.get(key)
             if not isinstance(table, dict):
                 continue
+            out.setdefault(key, {})
             for name, value in table.items():
                 if isinstance(name, str) and len(name) <= 32:
-                    out[key][name] = out[key].get(name, 0) + _int(value)
-        out["bytes"] += _int(agg.get("bytes"))
-        out["events"] += _int(agg.get("events"))
+                    out[key][name] = out[key].get(name, 0) + value
+        # Legacy files represented their line total only through language counts.
+        # Include that contribution when mixing them with explicit modern totals.
+        if "lines" in agg or "languages" in agg:
+            out["lines"] = out.get("lines", 0) + agg.get("lines", sum(agg.get("languages", {}).values()))
+        for key in ("bytes", "events"):
+            if key in agg:
+                out[key] = out.get(key, 0) + agg[key]
+        if "first_ts" in agg:
+            out.setdefault("first_ts", None)
         first = agg.get("first_ts")
-        if _int(first) and (out["first_ts"] is None or first < out["first_ts"]):
+        if _int(first) and (out.get("first_ts") is None or first < out["first_ts"]):
             out["first_ts"] = first
-        out["repo_count"] = max(out["repo_count"], _int(agg.get("repo_count")))
-        out["updated_at"] = max(out["updated_at"], _int(agg.get("updated_at")))
+        for key in ("repo_count", "updated_at"):
+            if key in agg:
+                out[key] = max(out.get(key, 0), agg[key])
+        for key in ("agents", "active_minutes", "usage"):
+            if key in agg:
+                out.setdefault(key, [] if key == "usage" else {})
         for agent, row in agg.get("agents", {}).items():
             dest = out["agents"].setdefault(agent, dict.fromkeys((*AGENT_FIELDS, "active_minutes"), 0))
             for key in (*AGENT_FIELDS, "active_minutes"):
@@ -277,7 +334,8 @@ def merge(aggregates, now=None):
             with localcontext() as ctx:
                 ctx.prec = 80
                 dest["estimated_cost_usd"] = None if a is None or b is None else format(Decimal(a) + Decimal(b), "f")
-    out["usage"] = [usage_buckets[key] for key in sorted(usage_buckets)]
+    if "usage" in out:
+        out["usage"] = [usage_buckets[key] for key in sorted(usage_buckets)]
     return out
 
 
@@ -342,27 +400,27 @@ def card_data(merged, github_user, now, locale="en", tz=None, avatar=None, badge
     """What the renderer draws, from merged aggregates. Mirrors loadCardData()."""
     to_day = day_fn(tz)
     rows = sorted(
-        ((name, lines) for name, lines in merged["languages"].items() if lines > 0),
+        ((name, lines) for name, lines in merged.get("languages", merged.get("language_percentages", {})).items() if lines > 0),
         key=lambda item: (-item[1], item[0]),
     )
     languages = [LanguageSlice(name, lines) for name, lines in rows]
-    counts = merged["event_types"]
+    counts = merged.get("event_types", {})
     heat_cutoff = to_day(int(now) - (HEAT_WEEKS * 7 + 2) * 86400)
-    day_lines = {day: lines for day, lines in merged["days"].items() if day >= heat_cutoff}
+    day_lines = {day: lines for day, lines in merged.get("days", {}).items() if day >= heat_cutoff}
     weeks, marks, streak = build_heatmap(day_lines, to_day(int(now)), locale)
     return CardData(
         languages=languages,
-        total_lines=sum(s.total for s in languages),
-        total_bytes=merged["bytes"],
-        repo_count=merged["repo_count"],
+        total_lines=merged.get("lines", sum(s.total for s in languages)),
+        total_bytes=merged.get("bytes", 0),
+        repo_count=merged.get("repo_count", 0),
         badges=[dict(b) for b in badges][:8],
         pins=[dict(p) for p in pins][:3],
         total_commits=counts.get("commit", 0),
         total_actions=counts.get("edit", 0) + counts.get("write", 0),
         total_diffs=counts.get("diff", 0),
-        first_ts=merged["first_ts"],
-        total_events=merged["events"],
-        updated_at=merged["updated_at"],
+        first_ts=merged.get("first_ts"),
+        total_events=merged.get("events", 0),
+        updated_at=merged.get("updated_at", 0),
         heat_weeks=weeks,
         month_marks=marks,
         streak=streak,
@@ -375,4 +433,6 @@ def card_data(merged, github_user, now, locale="en", tz=None, avatar=None, badge
         show_usage=isinstance(card, dict) and card.get("show_usage") is True,
         active_minutes=sum(row["active_minutes"] for row in merged.get("agents", {}).values())
         if merged.get("agents") else None,
+        sections=frozenset(category for category, fields in CATEGORY_FIELDS.items() if any(key in merged for key in fields)),
+        language_total=sum(s.total for s in languages),
     )

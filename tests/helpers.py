@@ -46,7 +46,7 @@ class Home:
         # No network: no Worker, no GitHub API for the repo count, no avatar download.
         for module, attr, value in (
             (lib, "WORKER_INGEST_URL", ""),
-            (lib, "github_repo_count", lambda now=None: None),
+            (lib, "github_repo_count", lambda now=None, include_private=False: None),
             (publish, "fetch_avatar", lambda user, now=None: None),
             # A real waiter is a detached process that would outlive the patches.
             (publish, "_spawn_waiter", lambda: None),

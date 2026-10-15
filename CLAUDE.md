@@ -12,9 +12,9 @@ git post-commit hook ─────────┘   (offline-first)  (≤ 1 pe
 ```
 
 The **legacy** path — syncer ─> `POST /ingest` ─> Cloudflare Worker ─> D1 ─>
-rollups ─> `GET /svg` — still works and still serves the maintainer's card. It
-stays in `worker/` until that card is migrated; do not delete it, and do not
-break it. A machine with both a Worker URL and `config.json` feeds both.
+rollups ─> `GET /svg` — remains supported for existing installations in
+`worker/`; do not delete or break it. Updated hooks feed that path only with
+all required legacy category grants; partial consent holds legacy events locally.
 
 This file holds what stays true. What changed and when belongs in `CHANGELOG.md`,
 commits and pull requests — not here.
@@ -77,8 +77,9 @@ Version floors live in two places: `MIN_PYTHON` in `install.py` and
   the Worker (`worker/test/golden.test.ts`) and checked by `tests/test_golden.py`.
   Change both renderers together, or regenerate on purpose — never edit a golden
   file by hand.
-- **A machine writes only its own `machines/<source_id>.json`.** Others' files are
-  carried over byte for byte; the push is a `--force-with-lease` against the
+- **A machine updates its own `machines/<source_id>.json`.** Others' valid files are
+  carried over byte for byte when they match the current consent allowlist;
+  revocation scrubs denied fields across machines. The push is a `--force-with-lease` against the
   commit that was read. Counts are summed across machines; `repo_count` is the
   maximum, never the sum.
 - **Publishing never uses the user's git identity or global config**, and never
@@ -147,8 +148,9 @@ Version floors live in two places: `MIN_PYTHON` in `install.py` and
   the runtime's `timingSafeEqual`.
 - `git rev-parse --git-path hooks/post-commit` answers relative to the directory
   it ran in. Join it onto that directory, not the process cwd.
-- `repo_count` is the GitHub owned-repository total read through the local `gh`
-  CLI (public + private); the no-`gh` fallback is distinct git roots. The raw
+- `repo_count` defaults to public GitHub repositories through local `gh`.
+  Private repositories and the local-root fallback require `repo_count_private`
+  consent. Legacy combined caches cannot supply the public count. The raw
   count of recorded working directories is never published.
 - Opening the hook database when it does not exist yet retires `source_id`
   (`init_db`). Read the machine id only after the database is open, or the first
@@ -178,3 +180,8 @@ Version floors live in two places: `MIN_PYTHON` in `install.py` and
   or `docs/superpowers/`.
 - Prefer existing tools and platform features over custom code, and keep the
   architecture above: no framework, no extra services, no second database.
+
+Agent/usage publication requires the corresponding consent category. Agent
+consent includes `active_minutes`; usage keeps daily agent/model-family buckets
+and Decimal cost sums. Card lines additionally require `card.show_agents` or
+`card.show_usage`; display settings alone never authorize machine JSON.

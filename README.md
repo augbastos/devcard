@@ -27,8 +27,9 @@ that into a card.
   Node — one runtime, Python.
 - **Content-private by architecture.** Code, file names, paths and project names
   never leave your machine; nothing devcard publishes has a field that could
-  hold one. What is published is activity metadata — which languages, how many
-  lines, events and bytes, lines per day — plus a repository count.
+  hold one. Publication requires explicit consent for each category of activity
+  metadata. All categories start disabled; capture and the localhost dashboard
+  still work without publication.
   [Exactly what →](docs/privacy-and-security.md)
 - **Near-live, not live.** The card republishes at most every 15 minutes while
   you work, and GitHub's image caching adds a few minutes on top.
@@ -49,8 +50,9 @@ devcard init
 ```
 
 `init` checks the prerequisites, installs **one** capture hook, asks which
-repository to publish to, publishes once, and prints the snippet for your
-README:
+repository to publish to, and asks yes/no for each publication category
+(default **No**). It publishes only if you authorize at least one category,
+and prints the snippet for your README:
 
 ```html
 <picture>
@@ -59,11 +61,57 @@ README:
 </picture>
 ```
 
-From then on the hooks publish by themselves. `devcard publish --force` publishes
+With consent, the hooks publish by themselves. `devcard publish --force` publishes
 now; `devcard render --out DIR` writes this machine's card locally without
 publishing anything. On a second machine, run the same two commands with the
 same repository — each machine publishes only its own numbers, and the card
 adds them up ([details](docs/serverless.md#several-machines)).
+
+## Choose what becomes public
+
+The `consent` object in `~/.claude/devcard/config.json` has six independent
+categories, all defaulting to `false`:
+
+| Category | What it reveals |
+|---|---|
+| `languages` | Language bar and percentages; per-language line counts only with `totals` |
+| `activity` | Per-day lines, heatmap, streak and last update time |
+| `totals` | Lines/bytes written, first event timestamp (tracking start), event counts and types |
+| `repo_count` | Count of public repositories you own on GitHub |
+| `agents` | Per-agent totals and estimated active minutes, including daily agent buckets |
+| `usage` | Daily token totals and API-equivalent cost estimates by agent/model family |
+
+Private repositories require the additional `consent.repo_count_private: true`
+opt-in alongside `repo_count`. Local roots of unknown visibility never replace
+the public count. `card.show_agents` and `card.show_usage` control display only;
+each line needs both its category consent and its display toggle. A toggle does
+not authorize publication or hide consented JSON from readers.
+
+```bash
+devcard init --yes --user <you> --repo <you>/<you> --consent languages,activity
+devcard privacy
+devcard privacy --grant totals
+devcard privacy --revoke activity
+devcard unpublish
+devcard serve
+```
+
+`--yes` accepts setup defaults; it grants **no** consent. An old config without
+`consent` pauses new publication until you review these choices through `init`
+or `privacy`. No authorized category means `publish` refuses. The renderer omits
+missing sections instead of displaying zero placeholders.
+
+Revocation saves the denial locally and republishes every machine's JSON without
+that category. Revoking the last category removes the verified devcard-owned
+branch, as does `unpublish`; a foreign or default branch is refused. Failed
+remote cleanup is reported and must be retried. `unpublish` also disables future
+automatic publication on this machine. Stop or revoke other machines too so
+they cannot publish again with their own saved grants.
+
+GitHub may keep old raw files cached or accessible by commit hash for a while
+after revocation or unpublish. Neither command erases copies others downloaded.
+`serve` binds to `127.0.0.1` and keeps showing everything locally regardless of
+publication consent. [Details](docs/privacy-and-security.md).
 
 ## Works with your agent
 
@@ -92,12 +140,14 @@ too. [All of it →](docs/customizing.md)
 with daily token counts by agent/model family and API-equivalent cost estimates.
 Publish and dashboard startup incrementally scan local Claude Code and Codex
 transcripts; set `"usage": false` to skip scanning. The published machine JSON
-includes agent totals and daily usage only when the matching card line is on;
-by default they stay on this machine.
+includes agent totals, daily active minutes and daily usage only with the
+corresponding `consent.agents` or `consent.usage` grant. Both grants default to
+false, independently of the card display toggles.
 Unknown prices remain unavailable; estimates are not subscription bills.
 
 Optional card lines use `"card": {"show_agents": true, "show_usage": true}`.
-Both default to false. Agent percentages use recorded lines added when an
+Both default to false and require the corresponding consented data to render.
+Agent percentages use recorded lines added when an
 `agent` column exists. Active hours estimate sessions from event gaps (15-minute
 idle threshold, 2-minute tail); concurrent agents are counted independently.
 
@@ -116,7 +166,8 @@ flowchart LR
 
 Events land locally first, so capture works offline and never blocks your
 session. Publishing reads every machine's file from the branch, replaces only
-its own, renders the merged card and pushes one commit — or nothing, when
+its own, applies the consent allowlist to carried files, renders the merged
+card and pushes one commit — or nothing, when
 nothing changed.
 
 ## Built to be checked
@@ -137,8 +188,8 @@ nothing changed.
 ## The legacy Worker
 
 Before this, devcard was a Cloudflare Worker + D1 that the hooks synced to every
-~20 seconds. It still works, it still serves the card above, and it stays in
-`worker/` until that card is migrated; it is no longer the recommended install.
+~20 seconds. That legacy path remains in `worker/` for existing installations;
+it is no longer the recommended install.
 It needs Python 3.11+, Node 22+, npm, git and a Cloudflare account:
 `git clone https://github.com/augbastos/devcard && cd devcard && python install.py`.
 [Its setup](docs/manual-setup.md) · [its hover trick](docs/hover-in-a-readme.md) ·

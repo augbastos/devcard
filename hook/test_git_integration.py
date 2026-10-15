@@ -6,6 +6,7 @@ installed into `.git/hooks` when git says the hooks live somewhere else — are
 bugs about what git actually does, and a mock would have happily agreed with
 the broken version.
 """
+import json
 import os
 import shutil
 import subprocess
@@ -72,6 +73,8 @@ class GitRepoCase(unittest.TestCase):
             self.addCleanup(patcher.stop)
         self.assertNotEqual(lib.DB_PATH, REAL_DB)
         self.assertNotEqual(lib.ERROR_LOG_PATH, REAL_ERROR_LOG)
+        with open(lib.CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump({"consent": dict.fromkeys(("languages", "activity", "totals", "repo_count"), True)}, f)
 
     def assertRealDataUntouched(self):
         self.assertFalse(os.path.exists(REAL_DB) and os.path.getsize(REAL_DB) == 0)

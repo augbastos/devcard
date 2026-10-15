@@ -547,8 +547,8 @@ def local_repo_count(conn):
     return len(roots)
 
 
-def github_repo_count(now=None):
-    """Repositories owned on GitHub (public + private), or None if unavailable.
+def github_repo_count(now=None, include_private=False):
+    """Public repositories owned on GitHub; private ones require explicit opt-in.
 
     Read through the `gh` CLI, which is already authenticated on the owner's
     machine — that keeps the private half of the count reachable without
@@ -560,7 +560,13 @@ def github_repo_count(now=None):
         with open(GITHUB_CACHE_PATH, encoding="utf-8") as f:
             cached = json.load(f)
         age = now - cached["fetched_at"]
-        count = cached["count"]
+        if include_private:
+            if cached.get("include_private") is False:
+                raise KeyError("combined count not cached")
+            count = cached.get("count")
+        else:
+            # Never reuse the legacy combined count as a public count.
+            count = cached["public"]
         if count is None:
             if age < GITHUB_FAILURE_TTL:
                 return None  # recent failure — don't re-spawn gh or re-log
@@ -569,7 +575,7 @@ def github_repo_count(now=None):
     except (OSError, ValueError, KeyError, TypeError):
         pass  # no cache, corrupt cache, or stale — fall through and refetch
 
-    count = None
+    count = public = private = None
     try:
         import shutil
         import subprocess
@@ -577,12 +583,15 @@ def github_repo_count(now=None):
         gh = shutil.which("gh")
         if gh:
             proc = subprocess.run(
-                [gh, "api", "user", "--jq", "{public:.public_repos,private:.owned_private_repos}"],
+                [gh, "api", "user", "--jq",
+                 "{public:.public_repos,private:.owned_private_repos}" if include_private else "{public:.public_repos}"],
                 capture_output=True, text=True, timeout=10,
             )
             if proc.returncode == 0:
                 data = json.loads(proc.stdout)
-                count = int(data["public"]) + int(data["private"])
+                public = int(data["public"])
+                private = int(data["private"]) if include_private else None
+                count = public + private if private is not None else public
             else:
                 log_error(f"github_repo_count: gh exited {proc.returncode}")
     except Exception as exc:
@@ -591,13 +600,14 @@ def github_repo_count(now=None):
     try:
         os.makedirs(os.path.dirname(GITHUB_CACHE_PATH), exist_ok=True)
         with open(GITHUB_CACHE_PATH, "w", encoding="utf-8") as f:
-            json.dump({"count": count, "fetched_at": int(now)}, f)
+            json.dump({"count": public + private if public is not None and private is not None else None,
+                       "public": public, "fetched_at": int(now), "include_private": include_private}, f)
     except OSError:
         pass  # cache is an optimization; the number is still good
     return count
 
 
-def repo_count(conn):
+def repo_count(conn, include_private=False):
     """The repo count the card publishes.
 
     GitHub is the source of truth — it's the number the card's link resolves
@@ -605,10 +615,11 @@ def repo_count(conn):
     count of working directories is never published, because it counts
     scratchpads and subfolders as repositories.
     """
-    remote = github_repo_count()
+    remote = github_repo_count(include_private=include_private)
     if remote is not None:
         return remote
-    return local_repo_count(conn)
+    # Local roots have unknown visibility; they must never stand in for public repos.
+    return local_repo_count(conn) if include_private else None
 
 
 def get_unsynced_events(conn, limit=50):
@@ -677,6 +688,44 @@ def log_error(message, path=None):
         pass
 
 
+def legacy_consent():
+    """The legacy wire cannot omit individual categories; partial consent holds it."""
+    try:
+        with open(CONFIG_PATH, encoding="utf-8") as f:
+            consent = json.load(f).get("consent", {})
+        if isinstance(consent, dict) and all(consent.get(key) is True for key in ("languages", "activity", "totals", "repo_count")):
+            return consent
+    except (OSError, ValueError, AttributeError):
+        pass
+    log_consent_notice()
+    return None
+
+
+def log_consent_notice():
+    """One daily notice, including concurrent hook processes. Never raises."""
+    guard = os.path.join(os.path.dirname(ERROR_LOG_PATH), ".consent-notice.lock")
+    held = False
+    try:
+        os.makedirs(os.path.dirname(guard), exist_ok=True)
+        try:
+            os.close(os.open(guard, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+        except FileExistsError:
+            if time.time() - os.stat(guard).st_mtime < 86400:
+                return
+            os.remove(guard)
+            os.close(os.open(guard, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+        held = True
+        _log_throttled("consent-missing", "devcard: publication paused; review categories with `devcard privacy` or `devcard init`", ttl=86400)
+    except OSError:
+        pass
+    finally:
+        if held:
+            try:
+                os.remove(guard)
+            except OSError:
+                pass
+
+
 def send_to_worker(events, repo_count_value, url=None, token=None, timeout=1.5,
                    source=None):
     """POST a batch of events plus the current repo count to the Worker.
@@ -697,6 +746,8 @@ def send_to_worker(events, repo_count_value, url=None, token=None, timeout=1.5,
 
     Returns True on success.
     """
+    if legacy_consent() is None:
+        return False
     import urllib.request
 
     url = WORKER_INGEST_URL if url is None else url
@@ -820,6 +871,10 @@ def sync_pending(conn, max_batches=40, timeout=10):
             )
             return False
 
+        consent = legacy_consent()
+        if consent is None:
+            return False
+
         source = source_id()
         if not source:
             pending = count_unstamped(conn)
@@ -836,7 +891,11 @@ def sync_pending(conn, max_batches=40, timeout=10):
             unsynced = get_unsynced_events(conn, limit=50)
             if not unsynced:
                 return True
-            if not send_to_worker(unsynced, repo_count(conn), timeout=timeout, source=source):
+            count = repo_count(conn, include_private=consent.get("repo_count_private") is True)
+            if count is None:
+                _log_throttled("repo-count-unavailable", "devcard: legacy sync paused; public repository count unavailable")
+                return False
+            if not send_to_worker(unsynced, count, timeout=timeout, source=source):
                 return False  # network down — the next capture spawns a new attempt
             mark_synced(conn, [e["id"] for e in unsynced])
         return True

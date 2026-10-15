@@ -54,7 +54,9 @@ class Dashboard:
             return {"format": 1, "languages": {}, "event_types": {}, "days": {},
                     "bytes": 0, "events": 0, "first_ts": None, "repo_count": 0, "updated_at": now}
         repos = conn.execute("SELECT COUNT(*) FROM known_repos").fetchone()[0] if _columns(conn, "known_repos") else 0
-        return data.aggregate(conn, now, tz=self.cfg.get("timezone") or None, repo_count=repos)
+        # Loopback data is local, not publication; consent does not hide it.
+        return data.aggregate(conn, now, tz=self.cfg.get("timezone") or None, repo_count=repos,
+                              consent=config.FULL_CONSENT, repo_count_private=True)
 
     def card(self, aggregate):
         return data.card_data(data.merge([aggregate]), self.cfg.get("github_user") or "devcard",

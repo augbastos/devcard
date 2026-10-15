@@ -45,6 +45,9 @@ def setUpModule():
         patcher = mock.patch.object(lib, attr, os.path.join(_MODULE_TMP, name))
         patcher.start()
         _PATCHERS.append(patcher)
+
+    with open(lib.CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump({"consent": dict.fromkeys(("languages", "activity", "totals", "repo_count"), True)}, f)
     # A configured endpoint, as install.py leaves behind. Without one the hook
     # sends nothing at all, which is its own test.
     # ...and a stand-in token, so no test ever holds the developer's real one.

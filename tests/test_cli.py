@@ -75,7 +75,7 @@ class InitTest(TempDirTest):
         with Home(self.tmp, "a") as home:
             home.add_events([edit(int(time.time()) - 60, "Python", 42)])
             code, out = init(["--yes", "--user", "octo-cat", "--repo", "octo-cat/octo-cat",
-                              "--remote", remote, "--mode", "claude"])
+                              "--remote", remote, "--mode", "claude", "--consent", "languages,activity,totals,repo_count"])
             self.assertEqual(code, 0)
             with open(cli.SETTINGS_PATH, encoding="utf-8") as f:
                 settings = json.load(f)
@@ -105,7 +105,7 @@ class InitTest(TempDirTest):
     def test_interactive_answers(self):
         with Home(self.tmp, "a"):
             code, out = init(["--remote", self.bare_remote()],
-                             answers=["octo-cat", "", "1", "n"])
+                             answers=["octo-cat", "", "1", *["n"] * len(config.CONSENT_CATEGORIES)])
             self.assertEqual(code, 0)
             self.assertEqual(config.load()["repo"], "octo-cat/octo-cat")  # the profile repo default
         self.assertNotIn("published", out)
@@ -192,7 +192,8 @@ class HookPublishesTest(TempDirTest):
         os.makedirs(devcard_home)
         with open(os.path.join(devcard_home, "config.json"), "w", encoding="utf-8") as f:
             json.dump({**config.DEFAULTS, "github_user": "octo-cat", "repo": "octo-cat/octo-cat",
-                       "remote": remote, "avatar": False}, f)
+                       "remote": remote, "avatar": False,
+                       "consent": dict.fromkeys(("languages", "activity", "totals"), True)}, f)
         project = os.path.join(self.tmp, "project")
         subprocess.run(["git", "init", "-q", project], check=True)
         with open(os.path.join(project, "app.py"), "w", encoding="utf-8") as f:
@@ -206,7 +207,8 @@ class HookPublishesTest(TempDirTest):
                "GIT_DIR": git_dir, "GIT_INDEX_FILE": os.path.join(git_dir, "index"),
                "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid",
                "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid",
-               "XDG_CONFIG_HOME": os.path.join(home, ".config")}
+               "XDG_CONFIG_HOME": os.path.join(home, ".config"),
+               "GH_CONFIG_DIR": os.path.join(home, ".config", "gh")}
         subprocess.run(["git", "-C", project, "add", "."], check=True, env=env)
         subprocess.run(["git", "-C", project, "commit", "-q", "-m", "x"], check=True, env=env)
         project_refs = git(project, "for-each-ref")
