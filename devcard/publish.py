@@ -138,6 +138,12 @@ class _Repo:
             self.git("remote", "set-url", "origin", self.url)
         else:
             self.git("remote", "add", "origin", self.url)
+        # The branch is always one root commit, so shallow fetches save nothing, and
+        # a stale shallow list makes git reject a later identical commit (same tree,
+        # same second) with "shallow update not allowed". Older clones carry one.
+        shallow = os.path.join(self.path, "shallow")
+        if os.path.exists(shallow):
+            os.remove(shallow)
 
     def fetch_head(self):
         """The branch's current commit on the remote (fetched), or None if it does not exist yet."""
@@ -147,7 +153,7 @@ class _Repo:
             raise PublishError(f"cannot reach the repository ({detail})")
         if not listing.stdout.strip():
             return None
-        self.git("fetch", "-q", "--depth=1", "origin", f"+{REF}:{TRACKING_REF}")
+        self.git("fetch", "-q", "origin", f"+{REF}:{TRACKING_REF}")
         return self.out("rev-parse", TRACKING_REF)
 
     def machine_files(self, commit):

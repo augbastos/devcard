@@ -816,6 +816,20 @@ class PrivacyCommandsTest(TempDirTest):
             self.assertEqual(git(remote, "for-each-ref", publish.REF), "")
             self.assertFalse(config.has_consent(config.load()))
 
+    def test_revoking_back_to_an_earlier_state_in_the_same_second_still_publishes(self):
+        # Same tree + same second = the same parentless commit as an earlier push.
+        remote = self.bare_remote()
+        start = int(time.time())
+        with Home(self.tmp, "a") as home, mock.patch.object(publish.time, "time", return_value=start):
+            home.add_events([edit(start - 60, "Python", 23456)])
+            config.save(settings(remote))
+            self.assertEqual(self.command("privacy", "--grant", "languages")[0], 0)
+            self.assertEqual(self.command("privacy", "--grant", "totals")[0], 0)
+            code, out = self.command("privacy", "--revoke", "totals")
+            self.assertEqual(code, 0, out)
+            raw = git(remote, "show", f"{publish.BRANCH}:machines/{lib.source_id()}.json")
+            self.assertNotIn("23456", raw)
+
     def test_revoke_scrubs_all_machines_and_stale_full_config_cannot_republish(self):
         remote = self.bare_remote()
         full = {**data.CORE_CATEGORIES, "repo_count_private": True}
