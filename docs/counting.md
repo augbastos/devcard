@@ -70,7 +70,7 @@ cannot keep another agent's session open. Concurrent sessions can overlap, so
 the sum is estimated **agent time**, which can exceed elapsed wall time; it is
 not a measure of human attention or actual agent runtime.
 
-This is an **estimate**, unlike WakaTime's editor heartbeats. Sparse commits
+This is an **estimate**, derived from the times of recorded changes. Sparse commits
 miss work between commits; dense edits can span time when nobody is typing.
 The tail is a convention, not observed work. These numbers are unsuitable as
 precise time sheets or evidence of human coding time.

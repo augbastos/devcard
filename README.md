@@ -17,8 +17,7 @@
 <p align="center"><em>↑ The maintainer's card, published by <code>devcard publish</code> to this repository's <code>devcard-data</code> branch.</em></p>
 A serverless card is one image per theme, without the per-language hover.</em></p>
 
-WakaTime and friends are built around time spent coding. devcard is built around
-a different question: **what came out of the session**. A hook records the edits
+devcard shows **what came out of your coding sessions**. A hook records the edits
 your agent makes — or, for any other tool, each commit — and your machine turns
 that into a card.
 
