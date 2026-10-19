@@ -15,6 +15,17 @@ What "public API" means for devcard, since it is not a library:
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in serverless README language hover (`readme_hover`, default off), asked
+  after consent in `devcard init` and toggled with `devcard readme --enable/--disable`.
+  Requires languages consent. Publishes light/dark language slices with the
+  cards, removes stale slices, and refreshes the marked default-branch README
+  only when changed and more than 24 hours after this machine's last update.
+  Uses the fixed devcard identity and preserves README line endings and history.
+- The legacy `scripts/refresh_readme.py` client shares the package's marker
+  replacement helper and remains available for Worker installations.
+
 ### Added — the serverless card (M1)
 
 - **`pipx install git+https://github.com/augbastos/devcard`, then `devcard init`.**

@@ -49,6 +49,7 @@ DEFAULTS = {
     "timezone": "",      # IANA zone for day boundaries; empty means this machine's local time
     "avatar": True,      # embed the GitHub avatar (fetched from github.com, cached a day)
     "usage": True,       # incremental, offline transcript scan before reading local data
+    "readme_hover": False,  # daily README language tooltips; also requires languages consent
     "card": {"show_agents": False, "show_usage": False},
     "badges": [],        # [{"kind": "badge|certification|award", "label": "..."}]
     "pins": [],          # [{"repo": "name", "note": "..."}]

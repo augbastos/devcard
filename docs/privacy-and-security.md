@@ -58,7 +58,7 @@ show all local data. It does not publish anything and needs no consent grants.
 
 ## The serverless card: what is published
 
-`devcard publish` pushes three kinds of file to the `devcard-data` branch of the
+`devcard publish` pushes generated files to the `devcard-data` branch of the
 repository you chose — a **public** repository, so everything below is readable
 by anyone. Each publish replaces the branch with a new single commit; the
 replaced commits are no longer on any branch, but GitHub may keep serving them
@@ -95,6 +95,22 @@ require `card.show_agents` or `card.show_usage` (both default off); turning a
 line off does not remove authorized machine JSON.
 `"usage": false` skips new scans but retains previously collected aggregates.
 `README.md` is fixed text.
+
+Optional `readme_hover: true` also publishes `lang/<n>.svg` and
+`lang/<n>-dark.svg` plus themed end caps. These use the card's existing language
+data and colours, including the Other bucket; `languages` consent is required.
+No additional activity category is exported. The setting defaults to false;
+`devcard init` asks separately, and `devcard readme --enable/--disable` toggles it.
+
+With hover enabled and both devcard markers present, the publisher can also
+update `README.md` on the repository's default branch with language names,
+shares and public image URLs. It uses the same fixed devcard commit identity,
+makes a normal commit only if the block changed, and waits more than 24 hours
+between successful README updates on this machine for this target. That branch
+keeps ordinary history, so old README percentages remain in previous commits.
+Disabling hover or revoking languages stops further README updates and removes
+hover files from the next generated data tree; it does not erase an existing
+README block, its history or cached images. Remove the block yourself if needed.
 
 What this publishes **beyond** the Worker's card: the per-machine split of those
 numbers, so how many machines you code on and how much on each, and lines per

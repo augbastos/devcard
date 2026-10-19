@@ -105,7 +105,7 @@ class InitTest(TempDirTest):
     def test_interactive_answers(self):
         with Home(self.tmp, "a"):
             code, out = init(["--remote", self.bare_remote()],
-                             answers=["octo-cat", "", "1", *["n"] * len(config.CONSENT_CATEGORIES)])
+                             answers=["octo-cat", "", "1", *["n"] * len(config.CONSENT_CATEGORIES), ""])
             self.assertEqual(code, 0)
             self.assertEqual(config.load()["repo"], "octo-cat/octo-cat")  # the profile repo default
         self.assertNotIn("published", out)
