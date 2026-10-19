@@ -100,6 +100,11 @@ class BranchGuardTest(TempDirTest):
     def test_foreign_files_never_reach_a_write(self):
         self.attempt([".devcard", "card.svg", "card-dark.svg", "important.txt"])
 
+    def test_foreign_language_files_never_reach_a_write(self):
+        for name in ("lang/evil.svg", "lang/sub/0.svg"):
+            with self.subTest(name=name):
+                self.attempt([".devcard", "card.svg", "card-dark.svg", name])
+
     def test_default_branch_never_reaches_a_write(self):
         self.attempt([".devcard", "card.svg", "card-dark.svg"], default=True)
 

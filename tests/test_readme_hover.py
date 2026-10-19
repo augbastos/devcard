@@ -106,13 +106,20 @@ class HoverPublishTest(TempDirTest):
         super().setUp()
         self.remote = self.bare_remote()
 
-    def seed_default(self, content=None):
+    def seed_default(self, content=None, mode="100644"):
         repo = publish._Repo(os.path.join(self.tmp, "default-builder.git"), self.remote)
         repo.ensure()
         files = {"keep.txt": b"unrelated\x00bytes\n"}
         if content is not None:
             files["README.md"] = content
-        head = repo.commit(repo.write_tree(files), NOW - 60)
+        tree = repo.write_tree(files)
+        if mode != "100644":
+            env = {"GIT_INDEX_FILE": os.path.join(repo.path, "fixture-index")}
+            blob = repo.out("rev-parse", f"{tree}:README.md")
+            repo.git("read-tree", tree, env=env)
+            repo.git("update-index", "--cacheinfo", mode, blob, "README.md", env=env)
+            tree = repo.out("write-tree", env=env)
+        head = repo.commit(tree, NOW - 60)
         repo.git("push", "-q", "origin", f"{head}:refs/heads/trunk")
         git(self.remote, "symbolic-ref", "HEAD", "refs/heads/trunk")
         return head
@@ -230,7 +237,7 @@ class HoverPublishTest(TempDirTest):
                 run({**cfg, **change}, now=NOW + 120, force=True)
                 self.assertNotIn("lang/", git(self.remote, "ls-tree", "-r", "--name-only", publish.BRANCH))
 
-    def test_competing_default_branch_edit_is_preserved_on_retry(self):
+    def test_competing_default_branch_edit_is_preserved_on_next_daily_retry(self):
         self.seed_default(self.marked())
         original = publish._Repo.push_readme
         attempts = []
@@ -245,18 +252,72 @@ class HoverPublishTest(TempDirTest):
             return original(repo, commit, ref)
 
         with Home(self.tmp, "a"), mock.patch.object(publish._Repo, "push_readme", race):
-            run(cfg_for(self.remote, readme_hover=True), force=True)
+            cfg = cfg_for(self.remote, readme_hover=True)
+            self.assertEqual(run(cfg, force=True), "published")
+            self.assertEqual(git(self.remote, "rev-list", "--count", "trunk"), "2")
+            self.assertEqual(run(cfg, now=NOW + 86401, force=True), "unchanged")
         self.assertEqual(git(self.remote, "show", "trunk:keep.txt"), "concurrent edit")
         self.assertEqual(git(self.remote, "rev-list", "--count", "trunk"), "3")
 
-    def test_failed_readme_push_reports_failure_without_recording_success(self):
+    def test_rejected_readme_push_preserves_card_success_and_backs_off_for_24h(self):
         self.seed_default(self.marked())
-        with Home(self.tmp, "a"), mock.patch.object(publish._Repo, "push_readme", return_value=(False, "rejected")):
-            with self.assertRaisesRegex(publish.PublishError, "README update rejected"):
-                run(cfg_for(self.remote, readme_hover=True), force=True)
+        with Home(self.tmp, "a") as home, mock.patch.object(publish.lib, "log_error") as log, \
+                mock.patch.object(publish._Repo, "push_readme", return_value=(False, "remote details")) as push:
+            cfg = cfg_for(self.remote, readme_hover=True)
+            self.assertEqual(run(cfg, force=True), "published")
+            push.assert_called_once()
             state = publish._read_json(config.state_path())
             self.assertEqual(state["last_push"], NOW)  # data branch succeeded
+            self.assertEqual(state["last_readme_attempt"], NOW)
+            self.assertEqual(state["readme_failure_reason"], "default branch rejected the update (protected?)")
             self.assertNotIn("last_readme_push", state)
+            self.assertNotIn("remote details", str(state))
+            log.assert_called_once_with("README hover: octo-cat/octo-cat default branch rejected the update (protected?); retrying in 24 h")
+            with mock.patch.object(publish._Repo, "default_head") as default:
+                home.add_events([edit(NOW + 10)])
+                self.assertEqual(run(cfg, now=NOW + 20, force=True), "published")
+                self.assertEqual(run(cfg, now=NOW + 86400, force=True), "unchanged")
+                default.assert_not_called()
+                push.assert_called_once()
+                log.assert_called_once()
+            with mock.patch.object(publish._Repo, "push_readme", return_value=(True, "")) as retry:
+                self.assertEqual(run(cfg, now=NOW + 86401, force=True), "unchanged")
+                retry.assert_called_once()
+            state = publish._read_json(config.state_path())
+            self.assertEqual(state["last_readme_push"], NOW + 86401)
+            self.assertNotIn("readme_failure_reason", state)
+
+    def test_readme_git_failure_does_not_fail_card_publication(self):
+        with Home(self.tmp, "a"), mock.patch.object(publish.lib, "log_error") as log, \
+                mock.patch.object(publish._Repo, "default_head", side_effect=publish.PublishError("unavailable")) as default:
+            cfg = cfg_for(self.remote, readme_hover=True)
+            self.assertEqual(run(cfg, force=True), "published")
+            self.assertEqual(run(cfg, now=NOW + 1000, force=True), "unchanged")
+            default.assert_called_once()
+            log.assert_called_once_with("README hover: octo-cat/octo-cat README update failed; retrying in 24 h")
+            state = publish._read_json(config.state_path())
+            self.assertEqual(state["last_readme_attempt"], NOW)
+            self.assertEqual(state["readme_failure_reason"], "README git operation failed")
+
+    def test_invalid_utf8_symlink_and_executable_readmes_have_a_distinct_hint(self):
+        cases = (("utf8", b"\xff" + self.marked(), "100644"),
+                 ("symlink", b"target.md", "120000"),
+                 ("executable", self.marked(), "100755"))
+        for name, content, mode in cases:
+            with self.subTest(name=name):
+                self.remote = self.bare_remote(f"{name}.git")
+                parent = self.seed_default(content, mode)
+                with Home(self.tmp, name), mock.patch.object(publish.lib, "log_error") as log, \
+                        mock.patch.object(publish._Repo, "push_readme") as push:
+                    cfg = cfg_for(self.remote, readme_hover=True)
+                    self.assertEqual(run(cfg, force=True), "published")
+                    self.assertEqual(run(cfg, now=NOW + 1000, force=True), "unchanged")
+                    log.assert_called_once_with("README.md is not a regular UTF-8 file; hover skipped")
+                    push.assert_not_called()
+                    self.assertEqual(self.head(), parent)
+                    state = publish._read_json(config.state_path())
+                    self.assertNotIn("readme_marker_hint", state)
+                    self.assertNotIn("last_readme_push", state)
 
 
 class HoverCommandTest(TempDirTest):

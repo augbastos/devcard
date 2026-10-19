@@ -23,6 +23,8 @@ What "public API" means for devcard, since it is not a library:
   cards, removes stale slices, and refreshes the marked default-branch README
   only when changed and more than 24 hours after this machine's last update.
   Uses the fixed devcard identity and preserves README line endings and history.
+  Rejected README updates back off for 24 hours without failing card publication;
+  invalid UTF-8 or non-regular README files get a distinct local hint.
 - The legacy `scripts/refresh_readme.py` client shares the package's marker
   replacement helper and remains available for Worker installations.
 

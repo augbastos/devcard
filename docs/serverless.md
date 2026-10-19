@@ -68,7 +68,7 @@ On each machine, in `~/.claude/devcard/` (next to the hook's database):
 | `source-id` | This machine's random id (16 random bytes). Names its file on the branch. |
 | `events.db` | The hook's local database. Holds working directories; never published. |
 | `publish/<owner>__<name>/` | A private bare git repository publishing goes through. Safe to delete. |
-| `publish-state.json` | When this machine last checked, last pushed the card and last updated the README for the target repository. Delete it to reset the local timers. |
+| `publish-state.json` | When this machine last checked, last pushed the card and last attempted/updated the README for the target repository, plus a short README failure reason if needed. Delete it to reset the local timers. |
 | `publish.lock`, `publish-pending` | A publish in progress, and the one waiting for the window to close. Removed when they finish; ignored after 10 and 20 minutes. |
 | `avatar.json` | Your GitHub avatar as a data URI, cached for a day. |
 
@@ -124,9 +124,14 @@ The HTML titles and widths live in the README. If both markers exist and the
 block changed, devcard makes one ordinary commit, `devcard: refresh language bar`,
 on the existing default branch, preserving its history, other files and the
 README's LF/CRLF endings. A missing README or markers causes a skip and a
-one-time local log hint. An unchanged block never creates a commit. A failed
-README update is reported after the data branch publish; retry a later publish.
-Branch protection can reject this direct README update.
+one-time local log hint. Invalid UTF-8, symlink or executable README files get
+a distinct hint and are left untouched. An unchanged block never creates a
+commit. A failed README update never fails the card publication: its attempt
+timestamp and a short reason are saved locally, and one log line reports it.
+Further README attempts wait more than 24 hours, even with `publish --force`,
+before fetching or pushing the default branch again. Branch protection can
+reject this direct README update when it requires a pull request. A competing
+edit that rejects a fast-forward push is preserved and retried the next day.
 
 README updates are limited to one per **more than 24 hours**, recorded locally
 per machine and target repository; `publish --force` does not bypass this timer.

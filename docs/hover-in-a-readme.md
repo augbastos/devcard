@@ -1,8 +1,9 @@
 # Hover, and how it reaches a GitHub README
 
-> **Legacy.** The split, hoverable card is served by the Cloudflare Worker. The recommended install is now the
-> [serverless card](serverless.md): `pipx install git+https://github.com/augbastos/devcard`
-> then `devcard init`. The Worker stays in `worker/` until the existing card is migrated.
+README hover works with the [serverless card](serverless.md#readme-language-hover).
+Enable it with `devcard readme --enable`, grant `languages` publication consent,
+and put the devcard markers around your card in the publish repository's
+default-branch `README.md`. No Worker is required.
 
 The card's language bar names the language under the pointer. Getting that to
 work inside a README meant giving up the idea that a card is one image. This
@@ -45,9 +46,12 @@ dot pulses in a README while hover does nothing.
 A `title` names a whole image, so one image can only ever have one tooltip. The
 bar therefore has to stop being part of the same image as the rest of the card.
 
-`?part=` serves the wide card as a body, two end caps and one slice per
-language. The README tiles them into a row, and each slice carries its own
-`title`. Point at Ruby's sliver and it says Ruby.
+`devcard publish` writes the full card plus light/dark language slices and end
+caps under `lang/` on the `devcard-data` branch. The README contains a full-card
+`<picture>` followed by adjacent per-slice `<picture>` elements. Each slice's
+`<img>` carries its own `title` with the language name and true share, and each
+picture has a dark source. The language/Other grouping and colours reuse the
+card's helpers. All image URLs point to `raw.githubusercontent.com`.
 
 Three measurements on a rendered README fixed the geometry:
 
@@ -70,8 +74,8 @@ imprecise.
 
 ## The price
 
-Each slice is floored at 4px, paid for out of the segments that have pixels to
-spare. Measured on the card in this repository's README: seven of its eighteen
+Each slice is floored at 4px at the nominal 840px card width, paid for out of
+the segments that have pixels to spare. Measured on the original Worker card: seven of its eighteen
 languages draw thinner than that floor, five of them under a single pixel and
 two under a tenth of one — Java at 0.09px, Ruby at 0.007px. A bar that draws
 them honestly draws them invisible, and nothing can point at 0.007px. The
@@ -83,25 +87,35 @@ everywhere. It just cannot hover.
 
 ## Using it
 
-Ask the Worker for the block and paste it between two markers:
+Hover defaults to off. `devcard init` asks separately after the consent questions,
+default No; unattended setup can pass `--readme-hover`. For an existing setup:
 
 ```bash
-curl https://<your-worker-url>/embed?user=<you>
+devcard privacy --grant languages
+devcard readme --enable
 ```
 
 ```html
 <!-- devcard:start -->
-…the block…
+Your existing card snippet goes here.
 <!-- devcard:end -->
 ```
 
-The widths and the tooltip text are HTML attributes, so they live in your README
-and cannot follow your data on their own.
-[`.github/workflows/devcard-readme.yml`](../.github/workflows/devcard-readme.yml)
-regenerates them weekly with
-[`scripts/refresh_readme.py`](../scripts/refresh_readme.py).
+Run `devcard publish --force` to publish the images and fill the marked block.
+Later publications update the images while you work. The widths and tooltip
+text are HTML attributes, so refreshing those requires a README commit.
+devcard makes `devcard: refresh language bar` only when the block changed and
+more than 24 hours have passed since this machine's last successful README
+update for the target. Both markers must exist; everything outside them and
+the README's line endings are preserved.
 
-Weekly rather than daily because every slice's pixels are fetched live on each
-view: what drifts between runs is only the proportions and the percentages, and
-a language mix does not move far in a week. If the card is unreachable, the
-script leaves the last good block in place rather than emptying the README.
+If the default branch rejects the update, the card publication still succeeds.
+A local log line reports the rejection, and README retries wait 24 hours,
+including with `publish --force`. This can happen when branch protection
+requires a pull request. Missing markers and invalid UTF-8 or non-regular
+README files have separate local hints and are left untouched.
+
+`devcard readme --disable` stops README updates; the next data publish removes
+the hover images. Remove the marked block manually if needed. For details on
+daily timing, independent machine state, stale slice URLs and retained history,
+see [README language hover](serverless.md#readme-language-hover).

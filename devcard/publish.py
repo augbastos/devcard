@@ -248,8 +248,10 @@ class _Repo:
 
     def readme_blob(self, head):
         entry = self.git("ls-tree", "-z", head, "--", "README.md").stdout
+        if not entry:
+            return None
         if not entry.startswith(b"100644 blob "):
-            return None  # never follow a symlink or change an executable's mode
+            raise ValueError("README.md is not a regular UTF-8 file; hover skipped")
         return self.git("cat-file", "blob", f"{head}:README.md").stdout
 
     def readme_commit(self, head, body, now):
@@ -269,7 +271,7 @@ class _Repo:
         return self.out("commit-tree", tree, "-p", head, "-m", "devcard: refresh language bar", env=author)
 
     def push_readme(self, commit, ref):
-        # Ordinary fast-forward only. A competing edit is fetched and rebuilt.
+        # Ordinary fast-forward only. A rejected update waits until the next day.
         proc = self.git("push", "-q", "origin", f"{commit}:{ref}", check=False)
         return proc.returncode == 0, proc.stderr.decode("utf-8", "replace").strip()
 
@@ -427,45 +429,75 @@ def render_local(cfg, out_dir, now=None, repo_count_fn=None, avatar_fn=None):
     return paths
 
 
-def _readme_hint(state, target):
-    if state.get("readme_marker_hint") != target:
-        lib.log_error("README hover skipped: add <!-- devcard:start --> and <!-- devcard:end --> around the card in README.md.")
-        state["readme_marker_hint"] = target
+def _readme_hint(state, target, kind="marker"):
+    key = f"readme_{kind}_hint"
+    if state.get(key) != target:
+        message = ("README.md is not a regular UTF-8 file; hover skipped" if kind == "file" else
+                   "README hover skipped: add <!-- devcard:start --> and <!-- devcard:end --> around the card in README.md.")
+        lib.log_error(message)
+        state[key] = target
         _write_json(config.state_path(), state)
+
+
+def _readme_failure(state, target, now, reason, message):
+    # Keep only a fixed short reason, never git stderr (which may contain URLs).
+    state.update({"readme_attempt_target": target, "last_readme_attempt": now,
+                  "readme_failure_reason": reason})
+    try:
+        _write_json(config.state_path(), state)
+    except OSError:
+        lib.log_error("README hover: could not save retry state; 24 h backoff could not be persisted")
+    lib.log_error(message)
 
 
 def refresh_readme(repo, cfg, aggregates, now, state):
     """Refresh a marked README at most daily, after the card files are available.
 
     The clock is local to this machine and destination; --force does not lift it.
-    Errors are reported after the card publish, and can be retried next time.
+    README git failures never fail the card publication. Failed attempts also
+    back off for a day, so a protected default branch is not retried per hook.
     """
     if not readme.enabled(cfg):
         return
     target = cfg["repo"] + "\n" + config.remote_url(cfg)
     if state.get("readme_target") == target and now - state.get("last_readme_push", 0) <= README_INTERVAL:
         return
+    if state.get("readme_attempt_target") == target and now - state.get("last_readme_attempt", 0) <= README_INTERVAL:
+        return
+    try:
+        _refresh_readme(repo, cfg, aggregates, now, state, target)
+    except (PublishError, OSError):
+        _readme_failure(state, target, now, "README git operation failed",
+                        f"README hover: {cfg['repo']} README update failed; retrying in 24 h")
+
+
+def _refresh_readme(repo, cfg, aggregates, now, state, target):
     block = readme.build_block(cfg["repo"], _card_data(cfg, aggregates, now), cfg["lang"])
-    detail = ""
-    for _ in range(PUSH_ATTEMPTS):
-        default = repo.default_head()
+    default = repo.default_head()
+    try:
         raw = repo.readme_blob(default[1]) if default else None
-        try:
-            text = raw.decode("utf-8") if raw is not None else ""
-            updated = readme.replace_block(text, block)
-        except ValueError:
-            _readme_hint(state, target)
-            return
-        if updated == text:
-            return
-        ref, head = default
-        commit = repo.readme_commit(head, updated.encode("utf-8"), now)
-        ok, detail = repo.push_readme(commit, ref)
-        if ok:
-            state.update({"readme_target": target, "last_readme_push": now})
-            _write_json(config.state_path(), state)
-            return
-    raise PublishError(f"README update rejected {PUSH_ATTEMPTS} times ({detail})")
+        text = raw.decode("utf-8") if raw is not None else ""
+    except ValueError:
+        _readme_hint(state, target, "file")
+        return
+    try:
+        updated = readme.replace_block(text, block)
+    except ValueError:
+        _readme_hint(state, target)
+        return
+    if updated == text:
+        return
+    ref, head = default
+    commit = repo.readme_commit(head, updated.encode("utf-8"), now)
+    ok, _detail = repo.push_readme(commit, ref)
+    if not ok:
+        _readme_failure(state, target, now, "default branch rejected the update (protected?)",
+                        f"README hover: {cfg['repo']} default branch rejected the update (protected?); retrying in 24 h")
+        return
+    state.update({"readme_target": target, "last_readme_push": now,
+                  "readme_attempt_target": target, "last_readme_attempt": now})
+    state.pop("readme_failure_reason", None)
+    _write_json(config.state_path(), state)
 
 
 def publish(cfg, now=None, force=False, repo_count_fn=None, avatar_fn=None):
