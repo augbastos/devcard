@@ -15,6 +15,12 @@ What "public API" means for devcard, since it is not a library:
 
 ## [Unreleased]
 
+### Removed
+
+- The weekly `devcard-readme.yml` workflow. It regenerated the README card
+  block from the legacy Worker and failed once the README stopped embedding
+  Worker images; `devcard publish` now refreshes the hover block itself.
+
 ### Fixed
 
 - README hover block renders as one card: a light/dark body without the

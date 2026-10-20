@@ -193,7 +193,7 @@ const pctText = (n: number) => String(Math.round(n * 1e4) / 1e4);
  * seam — see the note at the top of this file.
  *
  * The widths and the tooltip text live in the markup, which is static, so this
- * block is regenerated (see .github/workflows/devcard-readme.yml). The pixels
+ * block is regenerated (scripts/refresh_readme.py, run by hand). The pixels
  * are always live; only the proportions and percentages are as fresh as the
  * last regeneration.
  */

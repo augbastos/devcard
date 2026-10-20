@@ -86,30 +86,13 @@ How the workflows are kept safe:
   never checks it out — it validates the pull request number from the artifact
   and posts SCPE's rendered comment as-is.
 
-## The weekly README refresh
+## The README card block
 
-`.github/workflows/devcard-readme.yml` regenerates the hoverable card block in
-the README. `main` only accepts pull requests, so the workflow opens one — or
-updates the one already open — on the branch `bot/refresh-readme-card`, using
-[peter-evans/create-pull-request](https://github.com/peter-evans/create-pull-request).
-When the block has not changed, it does nothing.
-
-It needs a GitHub App token rather than `GITHUB_TOKEN`, because GitHub does not
-start workflows for events `GITHUB_TOKEN` causes: a pull request it opened would
-never receive its required checks. To set it up once:
-
-1. Create a GitHub App (Settings → Developer settings → GitHub Apps) with no
-   webhook and two repository permissions: **Contents: read and write** and
-   **Pull requests: read and write**. Install it on this repository only.
-2. Create the environment `readme-bot` (Settings → Environments) with
-   deployment branches limited to `main`. In it, store the App's Client ID as
-   the **variable** `DEVCARD_BOT_CLIENT_ID` and a generated private key as the
-   **secret** `DEVCARD_BOT_PRIVATE_KEY`. A workflow on any other branch cannot
-   read them.
-
-Until both exist, the workflow writes whether the README is stale to its run
-summary and changes nothing. The token it mints is limited to those two
-permissions on this repository and expires when the job ends.
+The README hover block is refreshed by `devcard publish` on the maintainer's
+machine (opt-in `readme_hover`, at most one README commit a day; see
+[docs/hover-in-a-readme.md](hover-in-a-readme.md)). The former weekly
+`devcard-readme.yml` workflow, which regenerated the block from the legacy
+Worker, was retired once the README stopped embedding Worker images.
 
 ## A trap worth knowing about
 
