@@ -96,6 +96,32 @@ line off does not remove authorized machine JSON.
 `"usage": false` skips new scans but retains previously collected aggregates.
 `README.md` is fixed text.
 
+`card.show_models: true` adds a token-share bar for model families on full/wide
+cards and their optional README hover bodies. It requires `usage` consent and
+positive tokens, and includes input, output, cache read and cache write.
+Families below 1% and unknown models fold into Other; exact model names are
+never rendered. The display toggle defaults off and does not authorize usage
+publication.
+
+Optional `stat_badges` and `milestone_badges` (both default false) publish only
+the following files under `badges/`, each as `<name>.svg` and `<name>-dark.svg`:
+
+| Names | Required category |
+|---|---|
+| `lines`, `milestone-lines` | `totals` |
+| `streak`, `milestone-streak` | `activity` |
+| `language`, `polyglot` | `languages` |
+| `tokens` | `usage` |
+| `multi-agent` | `agents` |
+
+These locally generated SVGs contain only the `devcard` label and a derived
+stat or milestone, without usernames, project names or paths. They introduce
+no network calls or new data categories. Revoking a category or disabling
+its badge switch removes its files on the next successful publish. Cached
+or downloaded copies may remain. Streak milestones use the longest positive
+run within the published 126-day window, rather than a lifetime record.
+See [badge values and thresholds](badges.md).
+
 Optional `readme_hover: true` also publishes `lang/<n>.svg` and
 `lang/<n>-dark.svg` plus themed end caps. These use the card's existing language
 data and colours, including the Other bucket; `languages` consent is required.

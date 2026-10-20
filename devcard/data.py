@@ -110,6 +110,10 @@ class CardData:
     active_minutes: object = None
     sections: frozenset = field(default_factory=lambda: frozenset(CORE_CATEGORIES))
     language_total: float = 0
+    model_tokens: dict = field(default_factory=dict)
+    longest_streak: int = 0
+    show_models: bool = False
+    polyglot_eligible_languages: frozenset | None = None
 
 
 def day_fn(tz=None):
@@ -282,12 +286,25 @@ def merge(aggregates, now=None):
     now = int(time.time() if now is None else now)
     out = {}
     usage_buckets = {}
+    common_languages, rounded_languages = None, False
     for agg in aggregates:
         try:
             _validate_aggregate(agg, now)
         except ValueError as exc:
             warnings.warn(f"Skipping invalid machine aggregate: {exc}", RuntimeWarning, stacklevel=2)
             continue
+        if "languages" in agg:
+            table = agg["languages"]
+            total = sum(table.values())
+            qualified = {name for name, value in table.items() if value > 0 and value * 100 >= total}
+        elif "language_percentages" in agg:
+            table = agg["language_percentages"]
+            rounded_languages = True
+            qualified = {name for name, value in table.items() if value > 1.0}
+        else:
+            table = None
+        if table:
+            common_languages = qualified if common_languages is None else common_languages & qualified
         for key in ("languages", "language_percentages", "event_types", "days"):
             table = agg.get(key)
             if not isinstance(table, dict):
@@ -336,6 +353,10 @@ def merge(aggregates, now=None):
                 dest["estimated_cost_usd"] = None if a is None or b is None else format(Decimal(a) + Decimal(b), "f")
     if "usage" in out:
         out["usage"] = [usage_buckets[key] for key in sorted(usage_buckets)]
+    if rounded_languages:
+        # Internal rendering provenance, never a field in a machine aggregate.
+        # Unknown machine weights require qualification in every source.
+        out["_polyglot_eligible_languages"] = sorted(common_languages or ())
     return out
 
 
@@ -408,6 +429,22 @@ def card_data(merged, github_user, now, locale="en", tz=None, avatar=None, badge
     heat_cutoff = to_day(int(now) - (HEAT_WEEKS * 7 + 2) * 86400)
     day_lines = {day: lines for day, lines in merged.get("days", {}).items() if day >= heat_cutoff}
     weeks, marks, streak = build_heatmap(day_lines, to_day(int(now)), locale)
+    today = to_day(int(now))
+    published_cutoff = to_day(int(now) - KEEP_DAYS * 86400)
+    longest, run, previous = 0, 0, None
+    for day, lines in sorted(merged.get("days", {}).items()):
+        if lines <= 0 or not published_cutoff <= day <= today:
+            continue
+        run = run + 1 if previous is not None and day == _shift(previous, 1) else 1
+        longest = max(longest, run)
+        previous = day
+    model_tokens = {}
+    for row in merged.get("usage", []):
+        family = row["model_family"]
+        model_tokens[family] = model_tokens.get(family, 0) + sum(row[name] for name in usage_hook.TOKEN_FIELDS)
+    eligible = merged.get("_polyglot_eligible_languages")
+    if eligible is None and "languages" not in merged and "language_percentages" in merged:
+        eligible = [name for name, pct in merged["language_percentages"].items() if pct > 1.0]
     return CardData(
         languages=languages,
         total_lines=merged.get("lines", sum(s.total for s in languages)),
@@ -435,4 +472,8 @@ def card_data(merged, github_user, now, locale="en", tz=None, avatar=None, badge
         if merged.get("agents") else None,
         sections=frozenset(category for category, fields in CATEGORY_FIELDS.items() if any(key in merged for key in fields)),
         language_total=sum(s.total for s in languages),
+        model_tokens=model_tokens,
+        longest_streak=longest,
+        show_models=isinstance(card, dict) and card.get("show_models") is True,
+        polyglot_eligible_languages=frozenset(eligible) if eligible is not None else None,
     )

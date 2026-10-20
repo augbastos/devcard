@@ -116,6 +116,17 @@ class BranchGuardTest(TempDirTest):
     def test_default_branch_never_reaches_a_write(self):
         self.attempt([".devcard", "card.svg", "card-dark.svg"], default=True)
 
+    def test_badge_ownership_accepts_exactly_the_sixteen_names(self):
+        from devcard.badges import BADGE_NAMES
+
+        for name in BADGE_NAMES:
+            for suffix in ("", "-dark"):
+                self.assertIsNotNone(publish.BADGE_PATH_RE.fullmatch(f"badges/{name}{suffix}.svg"))
+        for name in ("badges/evil.svg", "badges/lines.svg.bak", "badges/sub/lines.svg",
+                     "badges/lines-dark-dark.svg", "badges/lines.svg\n", "badges/language-light.svg"):
+            self.assertIsNone(publish.BADGE_PATH_RE.fullmatch(name))
+            self.attempt([".devcard", "card.svg", "card-dark.svg", name])
+
     def test_foreign_history_never_reaches_a_write(self):
         self.attempt([".devcard", "card.svg", "card-dark.svg"], parent=True)
 
@@ -153,6 +164,38 @@ class PublishTest(TempDirTest):
 
     def owned_files(self):
         return {".devcard": b'{"format": 1}\n', "card.svg": b"<svg/>", "card-dark.svg": b"<svg/>"}
+
+    def test_badges_publish_and_each_revocation_removes_derived_files(self):
+        from datetime import date, timedelta
+        from .test_badges import GATES, NAMES
+
+        today = date(2025, 10, 9)
+        agents = {agent: {**dict.fromkeys(data.AGENT_FIELDS, 0), "lines_added": 10, "active_minutes": 0}
+                  for agent in ("claude-code", "codex")}
+        agg = {"format": 1, "lines": 1_234_567,
+               "languages": {"Python": 40, "Rust": 20, "Go": 20, "Shell": 10, "C": 10},
+               "days": {(today - timedelta(days=i)).isoformat(): 1 for i in range(31)}, "agents": agents,
+               "usage": [{"date": today.isoformat(), "agent": "claude", "model_family": "claude-opus",
+                          "input_tokens": 1, "output_tokens": 2, "cache_read_tokens": 3, "cache_write_tokens": 4,
+                          "estimated_cost_usd": None}]}
+        cfg = cfg_for(self.remote, stat_badges=True, milestone_badges=True, consent=config.FULL_CONSENT)
+        expected = {f"badges/{name}{suffix}.svg" for name in NAMES for suffix in ("", "-dark")}
+        with Home(self.tmp, "a"), mock.patch.object(publish, "local_aggregate", return_value=agg):
+            self.assertEqual(run(cfg, force=True), "published")
+            self.assertEqual({p for p in self.tree() if p.startswith("badges/")}, expected)
+            for category, removed in GATES.items():
+                revoked = {**cfg, "consent": {**config.FULL_CONSENT, category: False}}
+                self.assertEqual(run(revoked, force=True), "published")
+                remaining = expected - {f"badges/{name}{suffix}.svg" for name in removed for suffix in ("", "-dark")}
+                self.assertEqual({p for p in self.tree() if p.startswith("badges/")}, remaining)
+            self.assertEqual(run({**cfg, "stat_badges": False, "milestone_badges": False}, force=True), "published")
+            self.assertFalse(any(p.startswith("badges/") for p in self.tree()))
+
+    def test_foreign_badge_on_data_branch_is_refused(self):
+        head = self.seed({**self.owned_files(), "badges/x.svg": b"foreign"})
+        with Home(self.tmp, "a"), self.assertRaisesRegex(publish.PublishError, "not owned by devcard"):
+            run(cfg_for(self.remote), force=True)
+        self.assertEqual(git(self.remote, "rev-parse", publish.BRANCH), head)
 
     def test_accepts_owned_body_files_and_removes_them_when_hover_is_disabled(self):
         self.seed({**self.owned_files(), "lang/body.svg": b"<svg/>", "lang/body-dark.svg": b"<svg/>"})
@@ -776,7 +819,7 @@ class ConsentTest(TempDirTest):
     def test_init_prompts_default_no_even_when_rerun_with_previous_grants(self):
         with Home(self.tmp, "a"), mock.patch.object(cli, "publish") as send:
             config.save(settings(self.bare_remote(), config.FULL_CONSENT))
-            code, _ = init(["--mode", "claude"], answers=["", "", *[""] * len(config.CONSENT_CATEGORIES), ""])
+            code, _ = init(["--mode", "claude"], answers=["", "", *[""] * len(config.CONSENT_CATEGORIES), "", "", ""])
             self.assertEqual(code, 0)
             self.assertEqual(config.consents(config.load()), config.NO_CONSENT)
             send.assert_not_called()

@@ -73,6 +73,35 @@ class ParserAndPricingTests(unittest.TestCase):
     def setUp(self):
         self.prices = usage.load_prices()
 
+    def test_current_model_ids_use_exact_family_spellings_without_fabricated_prices(self):
+        families = {
+            "claude-opus": ("claude-opus-5", "claude-opus-5-5", "claude-opus-4-8"),
+            "claude-sonnet": ("claude-sonnet-5", "claude-sonnet-5-5"),
+            "claude-haiku": ("claude-haiku-5-5",),
+            "gpt": ("gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-sol", "gpt-5.6-terra",
+                    "gpt-6-luna", "gpt-5.6-luna"),
+        }
+        for family, models in families.items():
+            for model in models:
+                with self.subTest(model=model):
+                    call = usage.parse_claude(claude(model=model), salt=SALT)
+                    self.assertEqual(call.model, model)
+                    self.assertEqual(call.model_family, family)
+                    self.assertIsNone(usage.estimate_api_equivalent_cost(call, self.prices))
+                    state = usage.CodexState(SALT)
+                    usage.parse_codex(context(model), state)
+                    self.assertEqual(usage.parse_codex(response(), state).model_family, family)
+
+    def test_fable_and_free_form_model_suffixes_remain_unknown(self):
+        for model in ("claude-fable-5", "claude-fable-5-1", "claude-opus-5-private-model-sentinel",
+                      "gpt-6.1-sol-private-model-sentinel", "GPT-6.1-sol", " gpt-6.1-sol"):
+            with self.subTest(model=model):
+                call = usage.parse_claude(claude(model=model), salt=SALT)
+                self.assertIsNone(call.model)
+                self.assertEqual(call.model_family, "unknown")
+        self.assertEqual(usage.MODEL_FAMILIES,
+                         frozenset({"claude-opus", "claude-sonnet", "claude-haiku", "gpt", "o", "unknown"}))
+
     def test_claude_only_assistants_and_disjoint_categories(self):
         record = claude(normal=100, output=20, read=70, write=30, ttl=(20, 10))
         call = usage.parse_claude(record, salt=SALT)
@@ -205,6 +234,124 @@ class ScanTests(unittest.TestCase):
 
     def count_calls(self):
         return self.conn.execute("SELECT count(*) FROM usage_calls").fetchone()[0]
+
+    def test_model_table_change_reclassifies_both_agents_across_separate_scans(self):
+        claude_path = self.write("new-claude.jsonl", [claude(model="claude-opus-5-5")])
+        codex_path = self.write("new-codex.jsonl", [session(), context("gpt-6.1-sol"), response()])
+        unknown_path = self.write("unknown.jsonl", [claude("fable", "fable", model="claude-fable-5"),
+                                  claude("free", "free", model="gpt-6.1-sol-private-model-sentinel")])
+        old_models = {model: family for model, family in usage._MODELS.items()
+                      if model not in ("claude-opus-5-5", "gpt-6.1-sol")}
+        with mock.patch.object(usage, "_MODELS", old_models):
+            self.scan([claude_path, unknown_path])
+            self.scan([codex_path], "codex")
+        self.assertEqual({row.model_family for row in self.rows()}, {"unknown"})
+        before = [total(self.rows(), name) for name in usage.TOKEN_FIELDS]
+        old_fingerprint = self.conn.execute(
+            "SELECT value FROM usage_meta WHERE key='model_table_fingerprint'").fetchone()
+        self.assertIsNotNone(old_fingerprint)
+        claude_report = self.scan([claude_path, unknown_path])
+        self.assertEqual(claude_report.lines, 3)
+        self.assertEqual({row.model_family for row in self.rows() if row.agent == "claude"}, {"claude-opus", "unknown"})
+        # Updating a shared fingerprint must leave the other root/agent pending.
+        codex_report = self.scan([codex_path], "codex")
+        self.assertEqual(codex_report.lines, 3)
+        self.assertEqual({row.model_family for row in self.rows() if row.agent == "codex"}, {"gpt"})
+        self.assertEqual(before, [total(self.rows(), name) for name in usage.TOKEN_FIELDS])
+        self.assertEqual(self.count_calls(), 4)
+        self.assertEqual({row[0] for row in self.conn.execute("SELECT generation FROM usage_files")}, {1})
+        new_fingerprint = self.conn.execute(
+            "SELECT value FROM usage_meta WHERE key='model_table_fingerprint'").fetchone()
+        self.assertNotEqual(old_fingerprint, new_fingerprint)
+        self.assertEqual(len(new_fingerprint[0]), 64)
+        self.assertTrue(all(row.estimated_cost_usd is None for row in self.rows()))
+        models = {row[0] for row in self.conn.execute("SELECT model FROM usage_calls")}
+        self.assertEqual(models, {None, "claude-opus-5-5", "gpt-6.1-sol"})
+        dump = "\n".join(self.conn.iterdump())
+        self.assertNotIn("private-model-sentinel", dump)
+        self.assertNotIn("claude-fable-5", dump)
+        with mock.patch.object(usage, "parse_claude", side_effect=AssertionError("reparsed")), \
+                mock.patch.object(usage, "parse_codex", side_effect=AssertionError("reparsed")):
+            self.assertEqual(self.scan([claude_path, unknown_path]).lines, 0)
+            self.assertEqual(self.scan([codex_path], "codex").lines, 0)
+
+    def test_model_fingerprint_is_order_independent_and_unchanged_scan_is_incremental(self):
+        path = self.write("unchanged.jsonl", [claude()])
+        self.scan([path])
+        before = self.conn.execute("SELECT generation, offset FROM usage_files").fetchall()
+        reversed_models = dict(reversed(list(usage._MODELS.items())))
+        with mock.patch.object(usage, "_MODELS", reversed_models), \
+                mock.patch.object(usage, "parse_claude", side_effect=AssertionError("reparsed")):
+            report = self.scan([path])
+        self.assertEqual((report.lines, report.calls_updated), (0, 0))
+        self.assertEqual(self.conn.execute("SELECT generation, offset FROM usage_files").fetchall(), before)
+
+    def test_model_fingerprint_migration_preserves_missing_sources_and_existing_events(self):
+        path = self.write("available.jsonl", [claude(model="claude-opus-5")])
+        missing = self.write("missing.jsonl", [claude("missing", "missing")])
+        self.conn.execute("CREATE TABLE existing_events (value INTEGER)")
+        self.conn.execute("INSERT INTO existing_events VALUES (42)")
+        self.scan([path, missing])
+        self.conn.execute("DELETE FROM usage_meta WHERE key LIKE 'model_%'")
+        self.conn.commit()
+        missing.unlink()
+        report = self.scan([path])
+        self.assertEqual(report.lines, 1)
+        self.assertEqual(self.count_calls(), 2)
+        self.assertEqual(self.conn.execute("SELECT * FROM existing_events").fetchall(), [(42,)])
+
+    def test_model_rescan_and_fingerprint_roll_back_together(self):
+        path = self.write("atomic-model.jsonl", [claude(model="claude-opus-5")])
+        with mock.patch.object(usage, "_MODELS", {k: v for k, v in usage._MODELS.items() if k != "claude-opus-5"}):
+            self.scan([path])
+        self.conn.commit()
+        before = "\n".join(self.conn.iterdump())
+        original = usage._store_call
+
+        def fail_after_call(*args):
+            original(*args)
+            raise sqlite3.OperationalError("synthetic_model_rescan_failure")
+
+        with mock.patch.object(usage, "_store_call", side_effect=fail_after_call), self.assertRaises(sqlite3.OperationalError):
+            self.scan([path])
+        self.assertEqual("\n".join(self.conn.iterdump()), before)
+        self.assertEqual(self.scan([path]).lines, 1)
+        self.assertEqual(self.rows()[0].model_family, "claude-opus")
+
+    def test_model_rescan_preserves_codex_snapshot_reconciliation(self):
+        path = self.write("reconciled-model.jsonl", [session(), context("gpt-6.1-sol"),
+                          snapshot(tokens(), last=tokens()),
+                          {**response(), "payload": {**response()["payload"], "thread_token_usage": tokens()}}])
+        with mock.patch.object(usage, "_MODELS", {k: v for k, v in usage._MODELS.items() if k != "gpt-6.1-sol"}):
+            self.scan([path], "codex")
+        before = [total(self.rows(), name) for name in usage.TOKEN_FIELDS]
+        self.assertEqual(self.count_calls(), 1)
+        self.assertEqual(self.scan([path], "codex").lines, 4)
+        self.assertEqual(self.count_calls(), 1)
+        self.assertEqual(self.rows()[0].model_family, "gpt")
+        self.assertEqual([total(self.rows(), name) for name in usage.TOKEN_FIELDS], before)
+
+    def test_model_rescan_reclassifies_verified_headerless_codex_baseline(self):
+        path = self.write("headerless-model.jsonl", [context("gpt-6.1-sol"), snapshot(tokens(), last=tokens())])
+        with mock.patch.object(usage, "_MODELS", {k: v for k, v in usage._MODELS.items() if k != "gpt-6.1-sol"}):
+            self.scan([path], "codex")
+        before = [total(self.rows(), name) for name in usage.TOKEN_FIELDS]
+        self.scan([path], "codex")
+        self.assertEqual(self.rows()[0].model_family, "gpt")
+        self.assertEqual([total(self.rows(), name) for name in usage.TOKEN_FIELDS], before)
+
+    def test_model_rescan_never_counts_previously_untrusted_rotated_baseline(self):
+        records = [session(), context("gpt-6.1-sol"), snapshot(tokens(0, 0, 0)),
+                   snapshot(tokens()), snapshot(tokens(150, 20, 30))]
+        path = self.write("rotated-model.jsonl", records)
+        with mock.patch.object(usage, "_MODELS", {k: v for k, v in usage._MODELS.items() if k != "gpt-6.1-sol"}):
+            self.scan([path], "codex")
+            self.write("rotated-model.jsonl", [context("gpt-6.1-sol"), snapshot(tokens(50, 5, 5), last=tokens(50, 5, 5))])
+            self.scan([path], "codex")
+        before = [total(self.rows(), name) for name in usage.TOKEN_FIELDS]
+        self.scan([path], "codex")
+        self.assertEqual([total(self.rows(), name) for name in usage.TOKEN_FIELDS], before)
+        self.assertEqual(self.count_calls(), 2)
 
     def test_three_revisions_replace_full_vector_and_keep_first_date(self):
         path = self.root / "private-file-sentinel.jsonl"

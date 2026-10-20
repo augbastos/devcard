@@ -50,7 +50,9 @@ DEFAULTS = {
     "avatar": True,      # embed the GitHub avatar (fetched from github.com, cached a day)
     "usage": True,       # incremental, offline transcript scan before reading local data
     "readme_hover": False,  # daily README language tooltips; also requires languages consent
-    "card": {"show_agents": False, "show_usage": False},
+    "card": {"show_agents": False, "show_usage": False, "show_models": False},
+    "stat_badges": False,
+    "milestone_badges": False,
     "badges": [],        # [{"kind": "badge|certification|award", "label": "..."}]
     "pins": [],          # [{"repo": "name", "note": "..."}]
     "consent": NO_CONSENT,

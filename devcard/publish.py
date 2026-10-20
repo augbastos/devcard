@@ -27,6 +27,7 @@ import warnings
 
 from . import config, data, readme, usage
 from ._hook import lib
+from .badges import BADGE_NAMES, badge_files
 from .render import render
 from .themes import theme_pair
 
@@ -42,6 +43,7 @@ AVATAR_MAX_BYTES = 256 * 1024
 BRANCH_MARKER = b'{"format": 1}\n'
 MACHINE_PATH_RE = re.compile(r"machines/[A-Za-z0-9_-]{1,64}\.json\Z")
 SLICE_PATH_RE = re.compile(r"lang/(?:[0-9]+|cap-left|cap-right|body)(?:-dark)?\.svg\Z")
+BADGE_PATH_RE = re.compile(r"badges/(?:" + "|".join(map(re.escape, BADGE_NAMES)) + r")(?:-dark)?\.svg\Z")
 README_INTERVAL = 86400
 
 # What git exports to a hook so that commands find *that* repository
@@ -193,7 +195,8 @@ class _Repo:
             if (mode != b"100644" or kind != b"blob"
                     or (name not in (".devcard", "README.md", "card.svg", "card-dark.svg")
                         and not MACHINE_PATH_RE.fullmatch(name)
-                        and not SLICE_PATH_RE.fullmatch(name))):
+                        and not SLICE_PATH_RE.fullmatch(name)
+                        and not BADGE_PATH_RE.fullmatch(name))):
                 raise PublishError(f"refusing to publish: {BRANCH} is not owned by devcard (unexpected layout)")
             names.add(name)
         if not {".devcard", "card.svg", "card-dark.svg"} <= names:
@@ -392,13 +395,14 @@ def _card_data(cfg, aggregates, now, avatar=None):
 
 
 def render_files(cfg, aggregates, now, avatar=None):
-    """{name: bytes} for cards and opt-in hover slices, from consented aggregates."""
+    """{name: bytes} for cards, opt-in hover slices and consented badges."""
     card = _card_data(cfg, aggregates, now, avatar)
     light, dark = theme_pair(cfg["theme"])
     files = {
         "card.svg": render(card, light, cfg["lang"], cfg["layout"], now=now, static=True).encode("utf-8"),
         "card-dark.svg": render(card, dark, cfg["lang"], cfg["layout"], now=now, static=True).encode("utf-8"),
     }
+    files.update(badge_files(card, cfg))
     if readme.enabled(cfg) and readme.split_supported(card, cfg["layout"]):
         files.update(readme.slice_files(card, light, dark))
         for suffix, theme in (("", light), ("-dark", dark)):

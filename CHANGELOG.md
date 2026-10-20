@@ -23,12 +23,30 @@ What "public API" means for devcard, since it is not a library:
 
 ### Fixed
 
+- Prevent rounded language percentages from granting a false polyglot badge.
+  Counts retain the inclusive 1% threshold; rounded percentages require more
+  than 1.0%, conservatively across sources, without publishing additional data.
+- Recognize additional reviewed Opus, Sonnet, Haiku and GPT model spellings
+  using exact matches. Changes to the model table automatically replay
+  available usage transcripts to reclassify historical unknown families,
+  preserving token totals and existing code events. Unrecognized models
+  remain unknown, and missing prices remain unknown.
 - README hover block renders as one card: a light/dark body without the
   language bar or bottom edge joins directly to the hover strip in `full`
   and `wide`. Other layouts retain the normal single-image embed.
 
 ### Added
 
+- Opt-in model-family token-share bar (`card.show_models`) for full/wide cards
+  and README hover bodies. Requires usage consent and positive tokens, sums
+  all four token fields, and folds families below 1% into Other.
+- Separate opt-in `stat_badges` and `milestone_badges`, controlled by
+  `devcard badges --stats/--no-stats --milestones/--no-milestones` and asked
+  during interactive setup. Eligible light/dark badge SVGs use each category's
+  consent; disabling or revoking removes them on the next publish. Lines
+  milestones are 100k/1M/10M; longest streaks in the published window are
+  7/30/90 days; polyglot and multi-agent use absolute qualification rules.
+  Default card bytes and the existing manual `badges` list are unchanged.
 - Opt-in serverless README language hover (`readme_hover`, default off), asked
   after consent in `devcard init` and toggled with `devcard readme --enable/--disable`.
   Requires languages consent. Publishes light/dark language slices with the

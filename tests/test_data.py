@@ -12,6 +12,45 @@ from .helpers import PROJECT, TempDirTest
 NOW = 1760000000  # 2025-10-09T08:53:20Z
 
 
+class ModelDataTest(unittest.TestCase):
+    def card(self, merged, **kwargs):
+        return data.card_data(merged, "octo-cat", NOW, tz="UTC", **kwargs)
+
+    def test_model_tokens_sums_four_fields_per_family(self):
+        row = {"model_family": "claude-opus", "input_tokens": 10, "output_tokens": 20,
+               "cache_read_tokens": 30, "cache_write_tokens": 40}
+        card = self.card({"usage": [row, row, {**row, "model_family": "gpt"}]})
+        self.assertEqual(card.model_tokens, {"claude-opus": 200, "gpt": 100})
+
+    def test_model_tokens_empty_without_usage_section(self):
+        self.assertEqual(self.card({}).model_tokens, {})
+
+    def test_longest_streak_in_window(self):
+        from datetime import date, timedelta
+
+        today = date(2025, 10, 9)
+        days = {(today - timedelta(days=i)).isoformat(): 1 for i in (*range(3), *range(5, 14))}
+        # Zero-line days, future dates and expired data cannot extend a milestone.
+        days["2025-10-05"] = 0
+        days.update({(today - timedelta(days=i)).isoformat(): 1 for i in range(127, 150)})
+        days["2025-10-10"] = 1
+        card = self.card({"days": days})
+        self.assertEqual(card.longest_streak, 9)
+        self.assertEqual(card.streak, 3)
+
+    def test_longest_streak_includes_published_days_before_heatmap(self):
+        from datetime import date, timedelta
+
+        today = date(2025, 10, 9)
+        days = {(today - timedelta(days=i)).isoformat(): 1 for i in range(116, 125)}
+        self.assertEqual(self.card({"days": days}).longest_streak, 9)
+
+    def test_show_models_default_false(self):
+        self.assertFalse(self.card({}).show_models)
+        self.assertTrue(self.card({}, card={"show_models": True}).show_models)
+        self.assertFalse(self.card({}, card={"show_models": "true"}).show_models)
+
+
 def agg(**overrides):
     base = {"format": 1, "languages": {}, "event_types": {}, "days": {}, "bytes": 0, "events": 0,
             "first_ts": None, "repo_count": 0, "updated_at": NOW}
