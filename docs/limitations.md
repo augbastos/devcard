@@ -31,8 +31,10 @@ to-do list.
   [the serverless card](serverless.md#how-fresh-the-card-is). It publishes only
   when a hook fires, so the "updated" date and the heatmap's "today" do not move
   on days you do not code.
-- **The serverless card has no per-language hover in a README.** It is one image
-  per theme; the split card behind the hover needs the Worker.
+- **README hover is opt-in and limited.** It works on the `full` and `wide`
+  layouts only, and the README block is refreshed at most once a day, so its
+  widths and tooltip text can lag the card by up to a day
+  ([details](hover-in-a-readme.md)).
 - **Pinned repositories show no star count** on the serverless card — that
   would take a GitHub API call per pin at every publish.
 - **Publishing force-pushes `devcard-data`**, so a ruleset that forbids
