@@ -3,7 +3,7 @@ from dataclasses import replace
 import unittest
 import xml.etree.ElementTree as ET
 
-from devcard import config, render
+from devcard import config, data, render
 from tests.test_models import fixture
 from tests.test_readme_hover import Tags
 
@@ -34,18 +34,62 @@ class ReadmeScaleTest(unittest.TestCase):
                         if "usage" in sections:
                             self.assertIsNotNone(root.find("s:g[@id='model-bar']", NS))
 
-    def test_wide_wrapped_pills_and_provenance_clear_footer(self):
+    def test_wrapped_pills_and_provenance_clear_footer(self):
         card = replace(fixture(), badges=[{"kind": "badge", "label": "A long badge label"}] * 8,
                        pins=[{"repo": "example", "note": "A repository", "stars": 1}] * 3)
-        for split in (False, True):
-            root = ET.fromstring(render.render(card, layout="wide", split=split))
-            divider = root.find("s:line", NS)
-            pills = root.findall(".//s:rect[@class='pill']", NS)
-            self.assertTrue(pills)
-            for pill in pills:
-                self.assertLess(float(pill.get("y")) + float(pill.get("height")), float(divider.get("y1")))
-            for text in root.findall("s:text", NS):
-                self.assertLess(float(text.get("y")), float(root.get("height")))
+        for layout in ("full", "wide"):
+            for split in (False, True):
+                root = ET.fromstring(render.render(card, layout=layout, split=split))
+                divider = float(root.find("s:line", NS).get("y1"))
+                pills = root.findall(".//s:rect[@class='pill']", NS)
+                self.assertTrue(pills)
+                for pill in pills:
+                    top, bottom = float(pill.get("y")), float(pill.get("y")) + float(pill.get("height"))
+                    self.assertTrue(bottom < divider or top > divider + 22)
+                    self.assertLess(bottom, float(root.get("height")))
+                for text in root.findall(".//s:text", NS):
+                    self.assertLess(float(text.get("y")), float(root.get("height")))
+
+    def test_base_height_and_side_by_side_content_with_unchanged_text_scale(self):
+        for layout, height, headline_size in (("full", 280, "30"), ("wide", 322, "32")):
+            card = replace(fixture(), languages=[data.LanguageSlice(f"Language{i}", 100) for i in range(7)],
+                           total_lines=700)
+            root = ET.fromstring(render.render(card, layout=layout))
+            self.assertEqual(root.get("height"), str(height))
+            headline = root.find(f"s:text[@font-size='{headline_size}']", NS)
+            self.assertIsNotNone(headline)
+            legend = root.find("s:circle[@r='4.5']", NS)
+            cells = root.findall("s:rect[@class='heat0']", NS)
+            self.assertTrue(cells)
+            self.assertLess(float(legend.get("cx")), min(float(c.get("x")) for c in cells))
+            self.assertGreater(float(legend.get("cy")), min(float(c.get("y")) for c in cells) - 12)
+            self.assertLess(float(legend.get("cy")), max(float(c.get("y")) for c in cells))
+
+    def test_expanded_legend_grows_below_heatmap_and_clears_footer(self):
+        card = replace(fixture(), languages=[data.LanguageSlice(f"Language{i}", 100) for i in range(40)],
+                       total_lines=4000, show_agents=True, show_usage=True, show_models=True,
+                       model_tokens={"gpt": 100})
+        for layout in ("full", "wide"):
+            for split in (False, True):
+                root = ET.fromstring(render.render(card, layout=layout, split=split, all_langs=True))
+                self.assertEqual(len(root.findall("s:circle[@r='4.5']", NS)), 40)
+                labels = root.findall("s:text[@class='txt'][@font-size='12.5']", NS)
+                divider = float(root.find("s:line", NS).get("y1"))
+                self.assertLess(max(float(n.get("y")) for n in labels), divider)
+                model = root.find("s:g[@id='model-bar']/s:text", NS)
+                self.assertLess(float(model.get("y")), float(root.get("height")))
+
+    def test_large_localized_footer_wraps_without_overlapping_stats(self):
+        card = replace(fixture(), total_actions=12345678, total_commits=12345678,
+                       total_events=123456789, first_ts=1750000000, updated_at=1760000000)
+        for layout in ("full", "wide"):
+            for lang in ("en", "pt", "es"):
+                root = ET.fromstring(render.render(card, layout=layout, lang=lang, static=True))
+                divider = float(root.find("s:line", NS).get("y1"))
+                prov = [n for n in root.findall("s:text[@class='faint']", NS)
+                        if float(n.get("y")) > divider][0]
+                self.assertEqual(float(prov.get("y")), divider + 40)
+                self.assertLess(float(prov.get("y")), float(root.get("height")))
 
 
 if __name__ == "__main__":

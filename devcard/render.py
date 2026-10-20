@@ -255,11 +255,10 @@ def _initial(data):
     return escape_xml(data.github_user[:1].upper())
 
 
-def render_heatmap(data, x0, top, cell, gap):
+def render_heatmap(data, x0, top, cell, gap, *, label_h=12, label_size=8.5, radius=2):
     step = cell + gap
-    label_h = 12
     marks = "".join(
-        f'<text class="faint" x="{num(x0 + w * step)}" y="{num(top + 8)}" {MONO} font-size="8.5">{escape_xml(label)}</text>'
+        f'<text class="faint" x="{num(x0 + w * step)}" y="{num(top + label_h - 4)}" {MONO} font-size="{num(label_size)}">{escape_xml(label)}</text>'
         for w, label in data.month_marks
     )
     cells = []
@@ -267,7 +266,7 @@ def render_heatmap(data, x0, top, cell, gap):
         for d, c in enumerate(week):
             cells.append(
                 f'<rect class="heat{c.level}" x="{num(x0 + w * step)}" y="{num(top + label_h + d * step)}" '
-                f'width="{num(cell)}" height="{num(cell)}" rx="2"><title>{c.day}: {c.lines}</title></rect>'
+                f'width="{num(cell)}" height="{num(cell)}" rx="{num(radius)}"><title>{c.day}: {c.lines}</title></rect>'
             )
     return marks + "".join(cells), label_h + 7 * step - gap
 
@@ -323,9 +322,36 @@ def _add_pills(pills, data):
         pills.add(b["label"], KIND_ICONS.get(b["kind"], KIND_ICONS["badge"]))
 
 
-def render_full(data, theme, t, now=0, all_langs=False, static=False, split=False):
+def _compact_footer(data, t, pad, width, y, now, static, size):
+    """Keep stats and provenance on one line when they fit at the existing scale."""
+    stats = []
+    if data.total_actions > 0:
+        stats.append((data.total_actions, t["edits"]))
+    stats.append((data.total_commits, t["commits"]))
+    parts, x = [], pad
+    for i, (n, label) in enumerate(stats):
+        prefix = " · " if i else ""
+        parts.append(
+            f'<text x="{num(x)}" y="{num(y)}" font-size="{num(size)}">'
+            f'<tspan class="mut" {SANS}>{prefix}</tspan>'
+            f'<tspan class="txt" {MONO} font-weight="700">{n}</tspan>'
+            f'<tspan class="mut" {SANS}> {escape_xml(label)}</tspan></text>'
+        )
+        x += (len(str(n)) * .62 + len(label + prefix + " ") * .57) * size
+    prov = provenance(data, t, now, static)
+    if prov:
+        # Monospace fine print is predictable; leave a little extra breathing room.
+        inline = x + 18 + len(prov) * 9.5 * .62 <= width - pad
+        if not inline:
+            y += 18
+        parts.append(f'<text class="faint" x="{width - pad}" y="{num(y)}" {MONO} '
+                     f'font-size="9.5" text-anchor="end">{escape_xml(("· " if inline else "") + prov)}</text>')
+    return "".join(parts), y
+
+
+def render_full(data, theme, t, now=0, all_langs=False, static=False, split=False, *, _wide=False):
     # Both the normal card and the README body use the same design scale.
-    W, PAD = README_WIDTH, WIDE_PAD if split else 24
+    W, PAD = README_WIDTH, WIDE_PAD if split or _wide else 24
     user = escape_xml(data.github_user)
     if data.avatar:
         avatar = (
@@ -340,15 +366,21 @@ def render_full(data, theme, t, now=0, all_langs=False, static=False, split=Fals
         )
     head_x = 68
 
-    bar_y, bar_h, bar_w = 130, 12, W - PAD * 2
+    bar_y, bar_h, bar_w = 110, 14 if _wide else 12, W - PAD * 2
     legend_slices = data.languages if all_langs else with_other_bucket(data.languages, NAMED_LANGUAGES)
     slices = data.languages
     geo = {"x": PAD, "y": bar_y, "width": bar_w, "height": bar_h, "clampLeft": PAD, "clampRight": W - PAD}
 
-    legend_top, row_h = (136 if split else 172), 21
-    columns = 3
+    # Share the middle band: two legend columns on the left, 16 weeks on the right.
+    heat_top = 116 if split else 140
+    cell, gap = (13, 3) if _wide else (8, 2)
+    grid_w = 16 * (cell + gap) - gap
+    heat_x = W - PAD - grid_w
+    legend_top, row_h = heat_top + 14, 22 if _wide else 21
+    columns = 2
     per_column = -(-len(legend_slices) // columns) or 1
-    col_x = [PAD + i * bar_w / columns for i in range(columns)]
+    col_w = (heat_x - PAD - 24) / columns
+    col_x = [PAD + i * col_w for i in range(columns)]
     rows = []
     for i, s in enumerate(legend_slices):
         pct = to_fixed((s.total / data.total_lines) * 100, 1) if data.total_lines > 0 else "0.0"
@@ -357,22 +389,19 @@ def render_full(data, theme, t, now=0, all_langs=False, static=False, split=Fals
         y = legend_top + (i % per_column) * row_h
         rows.append(
             f'<circle cx="{num(cx + 5)}" cy="{num(y - 4)}" r="4.5" fill="{slice_color(s)}"/>'
-            f'<text class="txt" x="{num(cx + 17)}" y="{num(y)}" {SANS} font-size="12.5">{escape_xml(truncate(slice_label(s, t["other"]), 16))}'
+            f'<text class="txt" x="{num(cx + 17)}" y="{num(y)}" {SANS} font-size="12.5">{escape_xml(truncate(slice_label(s, t["other"]), min(16, math.floor((col_w - 65) / 7))))}'
             f'<tspan class="mut" {MONO} font-size="11.5"> {pct}%</tspan></text>'
         )
     legend = "\n  ".join(rows)
     legend_bottom = legend_top if not legend_slices else legend_top + (per_column - 1) * row_h
 
-    heat_top = legend_bottom + 18
-    cell, gap = 8, 2
-    grid_w = 16 * (cell + gap) - gap
-    heat_x = PAD + (bar_w - grid_w) // 2
-    heat_svg, heat_h = render_heatmap(data, heat_x, heat_top, cell, gap)
+    heat_svg, heat_h = render_heatmap(data, heat_x, heat_top, cell, gap,
+                                    **({"label_h": 13, "label_size": 9, "radius": 2.5} if _wide else {}))
     heat_bottom = heat_top + heat_h
 
-    pinned, pinned_bottom = "", heat_bottom
+    pinned, pinned_bottom = "", max(heat_bottom, legend_bottom + 3)
     if data.pins:
-        pin_top, box_h, pin_gap = heat_bottom + 16, 42, 10
+        pin_top, box_h, pin_gap = pinned_bottom + 16, 42, 10
         box_w = (bar_w - pin_gap * (len(data.pins) - 1)) / len(data.pins)
         boxes = []
         for i, p in enumerate(data.pins):
@@ -392,27 +421,9 @@ def render_full(data, theme, t, now=0, all_langs=False, static=False, split=Fals
         pinned_bottom = pin_top + box_h
 
     div_y = pinned_bottom + 16
-    foot_y = div_y + 26
+    footer, foot_y = _compact_footer(data, t, PAD, W, div_y + 22, now, static, 12.5 if _wide else 12)
 
-    def stat(x, n, label):
-        return (
-            f'<text x="{num(x)}" y="{num(foot_y)}" font-size="12"><tspan class="txt" {MONO} font-weight="700">{n}</tspan>'
-            f'<tspan class="mut" {SANS}> {escape_xml(label)}</tspan></text>'
-        )
-
-    # "code edits" only exists on a claude-mode card; see docs/counting.md.
-    if data.total_actions > 0:
-        footer = stat(PAD, str(data.total_actions), t["edits"]) + stat(PAD + bar_w / 2, str(data.total_commits), t["commits"])
-    else:
-        footer = stat(PAD, str(data.total_commits), t["commits"])
-
-    prov = provenance(data, t, now, static)
-    provenance_line = (
-        f'<text class="faint" x="{W - PAD}" y="{num(foot_y + 18)}" {MONO} font-size="9.5" text-anchor="end">{escape_xml(prov)}</text>'
-        if prov else ""
-    )
-
-    pills = _Pills(PAD, W - PAD, foot_y + 26)
+    pills = _Pills(PAD, W - PAD, foot_y + 18)
     _add_pills(pills, data)
     rows_used = pills.row + 1 if pills.parts else 0
     H = pills.top + (rows_used * 28 if rows_used > 0 else 0) + 4
@@ -421,7 +432,8 @@ def render_full(data, theme, t, now=0, all_langs=False, static=False, split=Fals
   <style>{css_for(theme)}</style>
   <rect class="bg brd" x="0.5" y="0.5" width="{W - 1}" height="{num(H + 14 if split else H - 1)}" rx="14" stroke-width="1"/>
 
-  {avatar}
+  {_wide_header(data, t) if _wide else avatar}
+  {"" if _wide else f'''<g>
   <text class="txt" x="{head_x}" y="32" {SANS} font-size="15" font-weight="700">devcard</text>
   <text class="mut" x="{head_x}" y="48" {MONO} font-size="12">@{user}</text>
   <circle class="live" cx="{head_x + 66}" cy="27.5" r="4">
@@ -430,9 +442,10 @@ def render_full(data, theme, t, now=0, all_langs=False, static=False, split=Fals
   <a href="https://github.com/{user}?tab=repositories" target="_blank">
     <text class="link" x="{W - PAD}" y="36" {MONO} font-size="12" text-anchor="end">{data.repo_count} {escape_xml(t["repos"])} →</text>
   </a>
+  </g>'''}
 
-  <text class="txt" x="{PAD}" y="106" {MONO} font-size="30" font-weight="700">{fmt_count(data.total_lines, t["dec"])}<tspan class="mut" {SANS} font-size="12" font-weight="400"> {escape_xml(t["lines"])}</tspan><tspan class="faint" {MONO} font-size="11" font-weight="400"> ({fmt_bytes(data.total_bytes, t["dec"])})</tspan></text>
-  {streak_block(data, t, W - PAD, 106)}
+  {_wide_headline(data, t) if _wide else f'''<text class="txt" x="{PAD}" y="90" {MONO} font-size="30" font-weight="700">{fmt_count(data.total_lines, t["dec"])}<tspan class="mut" {SANS} font-size="12" font-weight="400"> {escape_xml(t["lines"])}</tspan><tspan class="faint" {MONO} font-size="11" font-weight="400"> ({fmt_bytes(data.total_bytes, t["dec"])})</tspan></text>
+  {streak_block(data, t, W - PAD, 90)}'''}
 
   {"" if split else language_bar_segments(slices, data.total_lines, geo, "barclip")}
 
@@ -444,10 +457,9 @@ def render_full(data, theme, t, now=0, all_langs=False, static=False, split=Fals
 
   <line class="brd" x1="{PAD}" y1="{num(div_y)}" x2="{W - PAD}" y2="{num(div_y)}" stroke-width="1"/>
   {footer}
-  {provenance_line}
   {(chr(10) + "  ").join(pills.parts)}
   {"" if split else language_bar_hover(slices, data.total_lines, geo, t["other"])}
-</svg>"""
+</svg>""".replace("\n  \n", "\n\n")
 
 
 # -- wide -----------------------------------------------------------------------
@@ -484,7 +496,7 @@ def _wide_header(data, t):
 
 
 def _wide_headline(data, t):
-    W, PAD, y = WIDE_W, WIDE_PAD, 108
+    W, PAD, y = WIDE_W, WIDE_PAD, 90
     cls = "accent" if data.streak >= 7 else "mut"
     return f"""<text class="txt" x="{PAD}" y="{y}" {MONO} font-size="32" font-weight="700">{fmt_count(data.total_lines, t["dec"])}<tspan class="mut" {SANS} font-size="13" font-weight="400"> {escape_xml(t["lines"])}</tspan><tspan class="faint" {MONO} font-size="11.5" font-weight="400"> ({fmt_bytes(data.total_bytes, t["dec"])})</tspan></text>
   <path class="{cls}" d="{FLAME_ICON}" transform="translate({W - PAD - 8},{y - 9}) scale(1.15)"/>
@@ -492,123 +504,8 @@ def _wide_headline(data, t):
   <text class="mut" x="{W - PAD}" y="{y + 17}" {SANS} font-size="10.5" text-anchor="end">{escape_xml(t["dayStreak"])}</text>"""
 
 
-def _wide_legend(data, slices, t, top):
-    if not slices:
-        return "", top
-    PAD = WIDE_PAD
-    columns = 3
-    row_h = 22
-    per_column = -(-len(slices) // columns)
-    col_w = WIDE_INNER / columns
-    rows = []
-    for i, s in enumerate(slices):
-        pct = to_fixed((s.total / data.total_lines) * 100, 1) if data.total_lines > 0 else "0.0"
-        cx = PAD + (i // per_column) * col_w
-        y = top + (i % per_column) * row_h
-        rows.append(
-            f'<circle cx="{num(cx + 5)}" cy="{num(y - 4)}" r="4.5" fill="{slice_color(s)}"/>'
-            f'<text class="txt" x="{num(cx + 17)}" y="{num(y)}" {SANS} font-size="12.5">{escape_xml(truncate(slice_label(s, t["other"]), 18))}'
-            f'<tspan class="mut" {MONO} font-size="11.5"> {pct}%</tspan></text>'
-        )
-    return "\n  ".join(rows), top + (per_column - 1) * row_h
-
-
-def _wide_heat_and_pins(data, top):
-    W, PAD = WIDE_W, WIDE_PAD
-    cell, gap = 13, 3
-    step = cell + gap
-    label_h = 13
-    grid_w = 16 * step - gap
-    marks = "".join(
-        f'<text class="faint" x="{num(PAD + w * step)}" y="{num(top + 9)}" {MONO} font-size="9">{escape_xml(label)}</text>'
-        for w, label in data.month_marks
-    )
-    cells = []
-    for w, week in enumerate(data.heat_weeks):
-        for d, c in enumerate(week):
-            cells.append(
-                f'<rect class="heat{c.level}" x="{num(PAD + w * step)}" y="{num(top + label_h + d * step)}" '
-                f'width="{cell}" height="{cell}" rx="2.5"><title>{c.day}: {c.lines}</title></rect>'
-            )
-    heat_bottom = top + label_h + 7 * step - gap
-
-    pins = ""
-    pin_x = PAD + grid_w + 26
-    shown = data.pins[:3]
-    if data.pins:
-        pin_w = W - PAD - pin_x
-        box_h, box_gap = 40, 8
-        user = escape_xml(data.github_user)
-        boxes = []
-        for i, p in enumerate(shown):
-            by = top + i * (box_h + box_gap)
-            star = f"★ {p['stars']}" if p.get("stars") is not None else ""
-            note = truncate(p.get("note") or "", math.floor(pin_w / 6.2) - (js_len(star) + 2 if star else 0))
-            sub = "  ".join(x for x in (star, note) if x)
-            boxes.append(
-                f'<a href="https://github.com/{user}/{escape_xml(p["repo"])}" target="_blank">'
-                f'<rect class="pill" x="{num(pin_x)}" y="{num(by)}" width="{to_fixed(pin_w, 1)}" height="{box_h}" rx="8"/>'
-                f'<path class="mut" d="{REPO_ICON}" transform="translate({num(pin_x + 15)},{num(by + 15)}) scale(0.85)"/>'
-                f'<text class="txt" x="{num(pin_x + 28)}" y="{num(by + 17)}" {SANS} font-size="12" font-weight="700">{escape_xml(truncate(p["repo"], 28))}</text>'
-                f'<text class="mut" x="{num(pin_x + 12)}" y="{num(by + 32)}" {SANS} font-size="10.5">{escape_xml(sub)}</text>'
-                "</a>"
-            )
-        pins = "\n  ".join(boxes)
-    return marks + "".join(cells) + pins, heat_bottom, pin_x, top + len(shown) * 48
-
-
 def render_wide(data, theme, t, now=0, all_langs=False, static=False, split=False):
-    W, PAD = WIDE_W, WIDE_PAD
-    bar_y, legend_top = 132, (140 if split else 176)
-    legend_slices = data.languages if all_langs else with_other_bucket(data.languages, NAMED_LANGUAGES)
-    slices = data.languages
-    geo = {"x": PAD, "y": bar_y, "width": WIDE_INNER, "height": 14, "clampLeft": PAD, "clampRight": W - PAD}
-    legend_svg, legend_bottom = _wide_legend(data, legend_slices, t, legend_top)
-    heat_top = legend_bottom + 22
-    heat_svg, heat_bottom, column_x, pins_bottom = _wide_heat_and_pins(data, heat_top)
-
-    pills = _Pills(column_x, W - PAD, pins_bottom + (4 if data.pins else 0))
-    _add_pills(pills, data)
-    pills_bottom = pills.top + (pills.row + 1) * 28 if pills.parts else 0
-    content_bottom = max(heat_bottom, pins_bottom, pills_bottom)
-    div_y = content_bottom + 20
-    foot_y = div_y + 26
-
-    def stat(x, n, label):
-        return (
-            f'<text x="{num(x)}" y="{num(foot_y)}" font-size="12.5"><tspan class="txt" {MONO} font-weight="700">{n}</tspan>'
-            f'<tspan class="mut" {SANS}> {escape_xml(label)}</tspan></text>'
-        )
-
-    if data.total_actions > 0:
-        footer = stat(PAD, str(data.total_actions), t["edits"]) + stat(PAD + WIDE_INNER / 2, str(data.total_commits), t["commits"])
-    else:
-        footer = stat(PAD, str(data.total_commits), t["commits"])
-
-    prov = provenance(data, t, now, static)
-    provenance_svg = (
-        f'<text class="faint" x="{W - PAD}" y="{num(foot_y + 18)}" {MONO} font-size="9.5" text-anchor="end">{escape_xml(prov)}</text>'
-        if prov else ""
-    )
-
-    H = foot_y + (32 if split else 36)
-
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="{W}" height="{num(H)}" viewBox="0 0 {W} {num(H)}" role="img" aria-label="devcard {escape_xml(data.github_user)}">
-  <style>{css_for(theme)}</style>
-  <rect class="bg brd" x="0.5" y="0.5" width="{W - 1}" height="{num(H + 14 if split else H - 1)}" rx="14" stroke-width="1"/>
-
-  {_wide_header(data, t)}
-  {_wide_headline(data, t)}
-  {"" if split else language_bar_segments(slices, data.total_lines, geo, "wbar")}
-  {legend_svg}
-  {heat_svg}
-
-  <line class="brd" x1="{PAD}" y1="{num(div_y)}" x2="{W - PAD}" y2="{num(div_y)}" stroke-width="1"/>
-  {footer}
-  {provenance_svg}
-  {(chr(10) + "  ").join(pills.parts)}
-  {"" if split else language_bar_hover(slices, data.total_lines, geo, t["other"])}
-</svg>"""
+    return render_full(data, theme, t, now, all_langs, static, split, _wide=True)
 
 
 # -- banner, half, vertical -------------------------------------------------------

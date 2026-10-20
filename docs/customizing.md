@@ -28,7 +28,7 @@ for the card itself — the SVG is plain template strings.
 
 | Key | Values |
 |---|---|
-| `layout` | `full` (712 wide), `wide` (712, larger heatmap and side-by-side pins), `banner` (480×72), `half` (480×152), `vertical` (280) |
+| `layout` | `full` (712×280 base), `wide` (712×322 base, larger heatmap), `banner` (480×72), `half` (480×152), `vertical` (280 wide) |
 | `theme` | `default` (published as its light and dark halves), `dark`, `light`, `gentle`, `cyberpunk`, `terminal` |
 | `lang` | `en`, `pt`, `es` |
 | `timezone` | An IANA zone such as `Europe/Dublin`; empty means this machine's local time |
@@ -48,8 +48,14 @@ The README snippet uses `width="100%"` to fill its column. Both `full` and
 `wide` have a 712px intrinsic canvas, including partial-consent cards and README
 hover bodies. At an 830px display width the scale is 830/712 ≈ 1.166×, matching
 the former 480px card at 560px. At 880px it is 1.236×; at 400px it is 0.562×.
-Font sizes and element heights in the SVG retain their design sizes; the extra
-horizontal room in `full` holds three legend columns and spreads the footer stats.
+Font sizes retain their design sizes. Full/wide place two language legend
+columns beside the heatmap and combine edits, commits and provenance in one
+footer line. Long provenance moves to a second short line. Without decorations
+or opt-in rows, `full` is 280px tall (about 326px at 830px wide); `wide` is 322px
+tall (about 375px displayed) to retain its larger heatmap. Pins and badge pills
+add rows below the main band; `--all-langs` can also extend the legend and height.
+These base heights describe cards with all main sections. Partial-consent cards
+keep their section-driven layout, which omits unshared categories without gaps.
 The legacy Worker retains its original geometry.
 
 Both optional lines extend the Python card's height in every layout. With
