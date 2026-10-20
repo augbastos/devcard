@@ -35,7 +35,7 @@ def maybe_spawn_sync():
             f.write(str(int(now)))
         flags = 0
         if os.name == "nt":
-            flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+            flags = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
         subprocess.Popen(
             [sys.executable, "-S", SYNC_SCRIPT],
             stdin=subprocess.DEVNULL,

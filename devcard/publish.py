@@ -667,7 +667,7 @@ def _spawn_waiter():
 
     flags = 0
     if os.name == "nt":
-        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        flags = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
     # The parent of this package: the repository root in a checkout (so -m finds
     # devcard/), site-packages' parent under pipx, where site finds it anyway.
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
