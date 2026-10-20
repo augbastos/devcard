@@ -15,6 +15,17 @@ What "public API" means for devcard, since it is not a library:
 
 ## [Unreleased]
 
+### Changed
+
+- Compact Python `full` cards to a 712×280px base while retaining the 712px
+  canvas and existing font sizes. The legend and heatmap share a band, and
+  footer stats and provenance share a line when they fit. `wide` uses the same
+  arrangement at 712×322px with its larger heatmap. Decorations, opt-in rows
+  and expanded legends still grow the card; README hover bodies retain the
+  seamless bottom strip. Other layouts and the legacy Worker are unchanged.
+- Regenerate all 36 Python full/wide README golden SVGs and their six
+  agent/usage opt-in hashes for the compact layout.
+
 ### Removed
 
 - The weekly `devcard-readme.yml` workflow. It regenerated the README card

@@ -70,6 +70,10 @@ The snippet fills the README column. The default `full` and `wide` layouts
 use a 712px canvas: at an 830px display width, content is about 1.17× its
 design size (the same scale as the former 480px card displayed at 560px).
 The card scales down with narrower columns; its text and spacing stay proportional.
+The base `full` card is 712×280px (about 326px tall in an 830px column),
+with the language legend beside the activity heatmap. `wide` keeps its larger
+heatmap in the same compact arrangement at 712×322px. Pins, badges, opt-in
+lines and expanded language legends add height; long provenance can wrap.
 
 For per-language tooltips, run `devcard readme --enable` and wrap your card in
 `<!-- devcard:start -->` and `<!-- devcard:end -->` markers in `README.md` on the
