@@ -1,19 +1,22 @@
 """README language hover: pure markup, consent gates, and real local git only."""
 import contextlib
+from dataclasses import replace
 from decimal import Decimal
 from html.parser import HTMLParser
 import io
 import os
+import re
 import unittest
 import xml.etree.ElementTree as ET
 from unittest import mock
 
-from devcard import cli, config, data, publish, readme
+from devcard import cli, config, data, publish, readme, render
 from devcard.svg import NEUTRAL_LANGUAGE_COLOR
 from devcard.themes import theme_pair
 
 from .helpers import Home, TempDirTest, edit, git
 from .test_cli import init
+from .test_optin_golden import fixture as optin_card
 from .test_publish import NOW, cfg_for, run
 
 
@@ -38,7 +41,15 @@ class BlockTest(unittest.TestCase):
         tags = Tags(block).tags
         images = [attrs for tag, attrs in tags if tag == "img"]
         sources = [attrs for tag, attrs in tags if tag == "source"]
-        self.assertEqual(len(images), 5)  # full card, two caps, two languages
+        self.assertEqual(len(images), 5)  # body, two caps, two languages
+        self.assertEqual([img["src"].rsplit("/", 1)[1] for img in images],
+                         ["body.svg", "cap-left.svg", "0.svg", "1.svg", "cap-right.svg"])
+        self.assertEqual(images[0]["width"], "100%")
+        self.assertIn("devcard", images[0]["alt"])
+        self.assertNotIn("card.svg", block)
+        self.assertEqual(block.count("<p>"), 1)
+        self.assertTrue(block.startswith("<p><picture>"))
+        self.assertTrue(block.endswith("</picture></p>"))
         self.assertEqual(len(sources), len(images))
         self.assertEqual([img["title"] for img in images if "title" in img], ["Python 80.0%", "Rust 20.0%"])
         self.assertEqual(sum(Decimal(img["width"][:-1]) for img in images[1:]), 100)
@@ -47,11 +58,66 @@ class BlockTest(unittest.TestCase):
             self.assertTrue(source["srcset"].endswith("-dark.svg"))
         for img in images:
             self.assertTrue(img["src"].startswith("https://raw.githubusercontent.com/octo-cat/cards/devcard-data/"))
-        for img in images[1:]:
+        for img in images:
             self.assertEqual(img["align"], "top")
         row = block.split("<p>")[1]
         self.assertNotIn("\n", row)
         self.assertNotIn("</picture> <picture>", row)
+        self.assertIsNone(re.search(r">\s+<", block))
+
+    def test_unsupported_layouts_and_missing_languages_use_normal_embed(self):
+        for layout, c in [(layout, card()) for layout in ("banner", "half", "vertical", "unknown")] + [
+                ("full", data.card_data({}, "octo-cat", NOW))]:
+            with self.subTest(layout=layout, sections=c.sections):
+                self.assertEqual(readme.build_block("octo-cat/cards", c, layout=layout),
+                                 config.embed_html("octo-cat/cards"))
+                self.assertEqual(render.render(c, layout=layout, split=True), render.render(c, layout=layout))
+
+    def test_body_closes_bar_gap_and_keeps_content_with_flat_frame(self):
+        complete = replace(optin_card(), show_agents=True, show_usage=True,
+                           languages=card().languages, total_lines=100,
+                           badges=[{"kind": "badge", "label": "Builder"}],
+                           pins=[{"repo": "example", "note": "A pinned repository", "stars": 12}])
+        for c in (complete, card(), card({"Python": 100}), replace(complete, languages=[], total_lines=0)):
+            for layout in ("full", "wide"):
+                for theme in theme_pair("default"):
+                    with self.subTest(layout=layout, sections=c.sections, theme=theme):
+                        full = ET.fromstring(render.render(c, theme, layout=layout, now=NOW, static=True))
+                        raw = render.render(c, theme, layout=layout, now=NOW, static=True, split=True)
+                        body = ET.fromstring(raw)
+                        self.assertEqual(body.get("width"), "840")
+                        self.assertEqual(body.get("viewBox"), f'0 0 840 {body.get("height")}')
+                        ns = {"s": "http://www.w3.org/2000/svg"}
+                        frame = body.find("s:rect[@class='bg brd']", ns)
+                        # Bottom corners and stroke lie below the viewBox, as in the Worker.
+                        self.assertGreaterEqual(float(frame.get("height")) - 14, float(body.get("height")))
+                        self.assertEqual(frame.get("width"), "839")
+                        self.assertEqual(frame.get("rx"), str(readme.CORNER))
+                        self.assertIsNone(body.find(".//s:rect[@class='track']", ns))
+                        self.assertIsNone(body.find(".//s:rect[@class='hit']", ns))
+                        self.assertIsNone(body.find(".//s:clipPath[@id='barclip']", ns))
+                        self.assertIsNone(body.find(".//s:clipPath[@id='wbar']", ns))
+                        # Legend/heatmap/footer/optional lines survive; only the bar's tooltip text goes.
+                        self.assertEqual([n.text for n in body.findall(".//s:text", ns)],
+                                         [n.text for n in full.findall(".//s:text", ns)
+                                          if n.get("class") != "tiptx"])
+                        self.assertLess(float(body.get("height")), float(full.get("height")))
+
+    def test_render_files_adds_body_pair_without_changing_normal_cards(self):
+        agg = {"format": 1, "language_percentages": {"Python": 80, "Rust": 20}}
+        for layout in render.LAYOUTS:
+            cfg = cfg_for("local", layout=layout)
+            full = publish.render_files(cfg, [agg], NOW)
+            hover = publish.render_files({**cfg, "readme_hover": True}, [agg], NOW)
+            with self.subTest(layout=layout):
+                self.assertEqual(full, {k: hover[k] for k in full})
+                if layout in ("full", "wide"):
+                    self.assertIn("lang/body.svg", hover)
+                    self.assertIn("lang/body-dark.svg", hover)
+                    self.assertIn(b"#ffffff", hover["lang/body.svg"])
+                    self.assertIn(b"#0f1117", hover["lang/body-dark.svg"])
+                else:
+                    self.assertEqual(full, hover)
 
     def test_other_group_titles_are_localized_and_html_escaped(self):
         languages = {f"Lang{i}": 10 - i for i in range(9)}
@@ -153,7 +219,8 @@ class HoverPublishTest(TempDirTest):
             self.assertNotIn(b"\n", body.replace(b"\r\n", b""))
             titles = [a["title"] for t, a in Tags(body.decode()).tags if t == "img" and "title" in a]
             self.assertEqual(titles, ["Python 80.0%", "Rust 20.0%"])
-            for filename in ("lang/0.svg", "lang/0-dark.svg", "lang/1.svg", "lang/1-dark.svg"):
+            for filename in ("lang/body.svg", "lang/body-dark.svg", "lang/0.svg", "lang/0-dark.svg",
+                             "lang/1.svg", "lang/1-dark.svg"):
                 ET.fromstring(git(self.remote, "show", f"{publish.BRANCH}:{filename}"))
             self.assertEqual(git(self.remote, "rev-list", "--count", publish.BRANCH), "1")
             self.assertEqual(run(cfg, now=NOW + 86401, force=True), "unchanged")

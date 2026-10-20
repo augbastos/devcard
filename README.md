@@ -64,7 +64,8 @@ and prints the snippet for your README:
 For per-language tooltips, run `devcard readme --enable` and wrap your card in
 `<!-- devcard:start -->` and `<!-- devcard:end -->` markers in `README.md` on the
 publish repository's default branch. With `languages` consent, the next publish
-adds a hoverable language bar; changed labels and widths refresh at most once
+renders one card with a body and a hoverable bottom language strip (`full`
+and `wide`; other layouts keep the single-image embed). Changed labels and widths refresh at most once
 per 24 hours per machine. This adds a normal README commit, separate from the
 generated data branch. `devcard readme --disable` stops future README updates.
 

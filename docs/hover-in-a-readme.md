@@ -46,12 +46,26 @@ dot pulses in a README while hover does nothing.
 A `title` names a whole image, so one image can only ever have one tooltip. The
 bar therefore has to stop being part of the same image as the rest of the card.
 
-`devcard publish` writes the full card plus light/dark language slices and end
-caps under `lang/` on the `devcard-data` branch. The README contains a full-card
-`<picture>` followed by adjacent per-slice `<picture>` elements. Each slice's
+`devcard publish` keeps the full card unchanged for normal embeds and writes
+`lang/body.svg`, `lang/body-dark.svg`, language slices and end caps on the
+`devcard-data` branch. The README contains one `<p>` with the body `<picture>`
+at `width="100%"`, followed immediately by the left cap, per-language slices
+and right cap. Every image uses `align="top"`, with no whitespace between tags.
+Each slice's
 `<img>` carries its own `title` with the language name and true share, and each
 picture has a dark source. The language/Other grouping and colours reuse the
 card's helpers. All image URLs point to `raw.githubusercontent.com`.
+
+The body has no language bar; the legend moves up to close that space while
+the heatmap, footer and other content remain. Its frame extends below the
+viewBox, clipping away the bottom border and rounded bottom corners. The
+34px strip supplies the bar, space around it, bottom border and corners.
+Both rows share the 840px canvas, 28px padding, background, border and 14px
+corner radius, so together they form one card.
+
+`full` and `wide` support this split, including partial-consent cards with a
+language section. Other layouts and cards without languages fall back to the
+normal single-image embed, without per-language README tooltips or hover files.
 
 Three measurements on a rendered README fixed the geometry:
 

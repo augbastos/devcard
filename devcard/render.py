@@ -41,13 +41,22 @@ from .themes import THEMES, css_for, theme_name
 LAYOUTS = ("full", "wide", "banner", "half", "vertical")
 
 
-def render(data, theme="default", lang="en", layout="full", now=0, all_langs=False, static=False):
+def split_supported(data, layout="full"):
+    """Only full/wide cards with a language section have a README strip."""
+    return layout in ("full", "wide") and "languages" in data.sections
+
+
+def render(data, theme="default", lang="en", layout="full", now=0, all_langs=False, static=False, split=False):
     """Render a variant, optionally extending it with agent and usage estimates.
 
     Unknown variant names fall back. `theme` accepts a name or palette dict.
     Without opt-in flags the legacy renderer's bytes are returned unchanged.
+
+    `split=True` moves the language bar to the README's separate bottom strip.
+    Unsupported layouts or cards without languages retain the normal embed.
     """
-    svg = _render_base(data, theme, lang, layout, now, all_langs, static)
+    split = split and split_supported(data, layout)
+    svg = _render_base(data, theme, lang, layout, now, all_langs, static, split)
     lines = []
     if data.show_agents and "agents" in data.sections:
         totals = sorted(data.agent_totals.items(), key=lambda r: (-r[1]["lines_added"], r[0]))
@@ -77,7 +86,9 @@ def render(data, theme="default", lang="en", layout="full", now=0, all_langs=Fal
     new_height = height + 22 * len(lines)
     svg = svg[:root.start()] + (f'width="{num(width)}" height="{num(new_height)}" '
                                 f'viewBox="0 0 {num(width)} {num(new_height)}"') + svg[root.end():]
-    svg = svg.replace(f'height="{num(height - 1)}" rx=', f'height="{num(new_height - 1)}" rx=', 1)
+    frame_extra = 14 if split else -1
+    svg = svg.replace(f'height="{num(height + frame_extra)}" rx=',
+                      f'height="{num(new_height + frame_extra)}" rx=', 1)
     extra = "".join(
         f'<text class="mut" x="24" y="{num(height + 13 + i * 22)}" {SANS} font-size="10">'
         f'<title>{escape_xml("Share of recorded lines added; activity estimate (concurrent agents counted independently): " + line if data.show_agents and "agents" in data.sections and i == 0 else line + " (estimate; not your subscription bill)")}</title>'
@@ -87,7 +98,7 @@ def render(data, theme="default", lang="en", layout="full", now=0, all_langs=Fal
     return svg.replace("</svg>", extra + "</svg>")
 
 
-def _render_base(data, theme="default", lang="en", layout="full", now=0, all_langs=False, static=False):
+def _render_base(data, theme="default", lang="en", layout="full", now=0, all_langs=False, static=False, split=False):
     """Render one variant. Unknown names fall back, as the Worker's query params do.
 
     `theme` is a theme name or a palette dict as themes.theme_pair returns.
@@ -95,19 +106,19 @@ def _render_base(data, theme="default", lang="en", layout="full", now=0, all_lan
     t = STRINGS[lang_name(lang)]
     tokens = theme if isinstance(theme, dict) else THEMES[theme_name(theme)]
     if not {"languages", "activity", "totals", "repo_count"} <= data.sections:
-        return render_sections(data, tokens, t, layout, now, static)
+        return render_sections(data, tokens, t, layout, now, static, split)
     if layout == "wide":
-        return render_wide(data, tokens, t, now, all_langs, static)
+        return render_wide(data, tokens, t, now, all_langs, static, split)
     if layout == "banner":
         return render_banner(data, tokens, t)
     if layout == "half":
         return render_half(data, tokens, t)
     if layout == "vertical":
         return render_vertical(data, tokens, t)
-    return render_full(data, tokens, t, now, all_langs, static)
+    return render_full(data, tokens, t, now, all_langs, static, split)
 
 
-def render_sections(data, theme, t, layout, now, static):
+def render_sections(data, theme, t, layout, now, static, split=False):
     """Existing card primitives, stacked without gaps for missing sections.
 
     The complete legacy card keeps its original render path and golden bytes.
@@ -115,6 +126,8 @@ def render_sections(data, theme, t, layout, now, static):
     """
     W = {"wide": 840, "banner": 840, "half": 420, "vertical": 320}.get(layout, 480)
     PAD, y = 24, 84
+    if split:
+        W, PAD = WIDE_W, WIDE_PAD
     inner = W - PAD * 2
     user = escape_xml(data.github_user)
     avatar = (f'<clipPath id="av"><circle cx="42" cy="36" r="17"/></clipPath>'
@@ -144,8 +157,9 @@ def render_sections(data, theme, t, layout, now, static):
         total = data.language_total
         geo = {"x": PAD, "y": y - 4, "width": inner, "height": 12,
                "clampLeft": PAD, "clampRight": W - PAD}
-        parts.append(language_bar_segments(data.languages, total, geo, "barclip"))
-        y += 30
+        if not split:
+            parts.append(language_bar_segments(data.languages, total, geo, "barclip"))
+            y += 30
         for s in with_other_bucket(data.languages):
             pct = to_fixed(s.total / total * 100, 1) if total else "0.0"
             parts.append(f'<circle cx="{PAD + 5}" cy="{y - 4}" r="4.5" fill="{slice_color(s)}"/>')
@@ -176,7 +190,7 @@ def render_sections(data, theme, t, layout, now, static):
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" '
             f'role="img" aria-label="devcard {user}">\n'
             f'<style>{css_for(theme)}</style>\n'
-            f'<rect class="bg brd" x="0.5" y="0.5" width="{W - 1}" height="{H - 1}" rx="14" stroke-width="1"/>\n'
+            f'<rect class="bg brd" x="0.5" y="0.5" width="{W - 1}" height="{H + 14 if split else H - 1}" rx="14" stroke-width="1"/>\n'
             + "\n".join(parts) + "\n</svg>")
 
 
@@ -268,8 +282,9 @@ def _add_pills(pills, data):
         pills.add(b["label"], KIND_ICONS.get(b["kind"], KIND_ICONS["badge"]))
 
 
-def render_full(data, theme, t, now=0, all_langs=False, static=False):
-    W, PAD = 480, 24
+def render_full(data, theme, t, now=0, all_langs=False, static=False, split=False):
+    # README pieces share the Worker's 840px canvas and 28px padding.
+    W, PAD = (WIDE_W, WIDE_PAD) if split else (480, 24)
     user = escape_xml(data.github_user)
     if data.avatar:
         avatar = (
@@ -289,7 +304,7 @@ def render_full(data, theme, t, now=0, all_langs=False, static=False):
     slices = data.languages
     geo = {"x": PAD, "y": bar_y, "width": bar_w, "height": bar_h, "clampLeft": PAD, "clampRight": W - PAD}
 
-    legend_top, row_h = 172, 21
+    legend_top, row_h = (136 if split else 172), 21
     per_column = -(-len(legend_slices) // 2) or 1
     col_x = [PAD, PAD + bar_w / 2 + 8]
     rows = []
@@ -362,7 +377,7 @@ def render_full(data, theme, t, now=0, all_langs=False, static=False):
 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="{W}" height="{num(H)}" viewBox="0 0 {W} {num(H)}" role="img" aria-label="devcard {user}">
   <style>{css_for(theme)}</style>
-  <rect class="bg brd" x="0.5" y="0.5" width="{W - 1}" height="{num(H - 1)}" rx="14" stroke-width="1"/>
+  <rect class="bg brd" x="0.5" y="0.5" width="{W - 1}" height="{num(H + 14 if split else H - 1)}" rx="14" stroke-width="1"/>
 
   {avatar}
   <text class="txt" x="{head_x}" y="32" {SANS} font-size="15" font-weight="700">devcard</text>
@@ -377,7 +392,7 @@ def render_full(data, theme, t, now=0, all_langs=False, static=False):
   <text class="txt" x="{PAD}" y="106" {MONO} font-size="30" font-weight="700">{fmt_count(data.total_lines, t["dec"])}<tspan class="mut" {SANS} font-size="12" font-weight="400"> {escape_xml(t["lines"])}</tspan><tspan class="faint" {MONO} font-size="11" font-weight="400"> ({fmt_bytes(data.total_bytes, t["dec"])})</tspan></text>
   {streak_block(data, t, W - PAD, 106)}
 
-  {language_bar_segments(slices, data.total_lines, geo, "barclip")}
+  {"" if split else language_bar_segments(slices, data.total_lines, geo, "barclip")}
 
   {legend}
 
@@ -389,7 +404,7 @@ def render_full(data, theme, t, now=0, all_langs=False, static=False):
   {footer}
   {provenance_line}
   {(chr(10) + "  ").join(pills.parts)}
-  {language_bar_hover(slices, data.total_lines, geo, t["other"])}
+  {"" if split else language_bar_hover(slices, data.total_lines, geo, t["other"])}
 </svg>"""
 
 
@@ -500,9 +515,9 @@ def _wide_heat_and_pins(data, top):
     return marks + "".join(cells) + pins, heat_bottom, pin_x, top + len(shown) * 48
 
 
-def render_wide(data, theme, t, now=0, all_langs=False, static=False):
+def render_wide(data, theme, t, now=0, all_langs=False, static=False, split=False):
     W, PAD = WIDE_W, WIDE_PAD
-    bar_y, legend_top = 132, 176
+    bar_y, legend_top = 132, (140 if split else 176)
     legend_slices = data.languages if all_langs else with_other_bucket(data.languages, NAMED_LANGUAGES)
     slices = data.languages
     geo = {"x": PAD, "y": bar_y, "width": WIDE_INNER, "height": 14, "clampLeft": PAD, "clampRight": W - PAD}
@@ -534,15 +549,15 @@ def render_wide(data, theme, t, now=0, all_langs=False, static=False):
     pills = _Pills(column_x, W - PAD, pins_bottom + (4 if data.pins else 0))
     _add_pills(pills, data)
     pills_bottom = pills.top + (pills.row + 1) * 28 if pills.parts else 0
-    H = max(foot_y + 18, pills_bottom + 46)
+    H = max(foot_y + (14 if split else 18), pills_bottom + (42 if split else 46))
 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="{W}" height="{num(H)}" viewBox="0 0 {W} {num(H)}" role="img" aria-label="devcard {escape_xml(data.github_user)}">
   <style>{css_for(theme)}</style>
-  <rect class="bg brd" x="0.5" y="0.5" width="{W - 1}" height="{num(H - 1)}" rx="14" stroke-width="1"/>
+  <rect class="bg brd" x="0.5" y="0.5" width="{W - 1}" height="{num(H + 14 if split else H - 1)}" rx="14" stroke-width="1"/>
 
   {_wide_header(data, t)}
   {_wide_headline(data, t)}
-  {language_bar_segments(slices, data.total_lines, geo, "wbar")}
+  {"" if split else language_bar_segments(slices, data.total_lines, geo, "wbar")}
   {legend_svg}
   {heat_svg}
 
@@ -550,7 +565,7 @@ def render_wide(data, theme, t, now=0, all_langs=False, static=False):
   {footer}
   {provenance_svg}
   {(chr(10) + "  ").join(pills.parts)}
-  {language_bar_hover(slices, data.total_lines, geo, t["other"])}
+  {"" if split else language_bar_hover(slices, data.total_lines, geo, t["other"])}
 </svg>"""
 
 
