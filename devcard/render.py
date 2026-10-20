@@ -4,11 +4,12 @@ Pure: (CardData, theme, strings, now) in, SVG text out. `now` is a parameter
 rather than read from the clock so that a render is reproducible — the golden
 tests depend on it.
 
-`static=True` is the one deliberate difference from the Worker. A published
+Full/wide use a 712px README canvas; the legacy Worker keeps its geometry.
+`static=True` is another deliberate difference from the Worker. A published
 card is a file that sits unchanged until the next publish, so the Worker's
 "updated 5min ago" would be baked in and soon false; a static card says
-"updated 2025-10-09" instead. With `static=False` the output matches the Worker
-byte for byte, which is what the golden tests check.
+"updated 2025-10-09" instead. `static=False` retains the Worker's relative
+timestamps, which the golden tests also cover.
 """
 import math
 from decimal import Decimal, localcontext
@@ -40,6 +41,8 @@ from .svg import (
 from .themes import THEMES, css_for, theme_name
 
 LAYOUTS = ("full", "wide", "banner", "half", "vertical")
+# At an 830px README column, design units scale almost exactly as 480px at 560px.
+README_WIDTH = 712
 
 
 def split_supported(data, layout="full"):
@@ -51,7 +54,7 @@ def render(data, theme="default", lang="en", layout="full", now=0, all_langs=Fal
     """Render a variant, optionally extending it with agent and usage estimates.
 
     Unknown variant names fall back. `theme` accepts a name or palette dict.
-    Without opt-in flags the legacy renderer's bytes are returned unchanged.
+    Without opt-in flags the base layout's bytes are returned unchanged.
 
     `split=True` moves the language bar to the README's separate bottom strip.
     Unsupported layouts or cards without languages retain the normal embed.
@@ -159,10 +162,10 @@ def _render_base(data, theme="default", lang="en", layout="full", now=0, all_lan
 def render_sections(data, theme, t, layout, now, static, split=False):
     """Existing card primitives, stacked without gaps for missing sections.
 
-    The complete legacy card keeps its original render path and golden bytes.
+    The complete card keeps its dedicated render path.
     Presence comes from the aggregate, never from a consent check in the SVG.
     """
-    W = {"wide": 840, "banner": 840, "half": 420, "vertical": 320}.get(layout, 480)
+    W = {"wide": README_WIDTH, "banner": 840, "half": 420, "vertical": 320}.get(layout, README_WIDTH)
     PAD, y = 24, 84
     if split:
         W, PAD = WIDE_W, WIDE_PAD
@@ -321,8 +324,8 @@ def _add_pills(pills, data):
 
 
 def render_full(data, theme, t, now=0, all_langs=False, static=False, split=False):
-    # README pieces share the Worker's 840px canvas and 28px padding.
-    W, PAD = (WIDE_W, WIDE_PAD) if split else (480, 24)
+    # Both the normal card and the README body use the same design scale.
+    W, PAD = README_WIDTH, WIDE_PAD if split else 24
     user = escape_xml(data.github_user)
     if data.avatar:
         avatar = (
@@ -343,8 +346,9 @@ def render_full(data, theme, t, now=0, all_langs=False, static=False, split=Fals
     geo = {"x": PAD, "y": bar_y, "width": bar_w, "height": bar_h, "clampLeft": PAD, "clampRight": W - PAD}
 
     legend_top, row_h = (136 if split else 172), 21
-    per_column = -(-len(legend_slices) // 2) or 1
-    col_x = [PAD, PAD + bar_w / 2 + 8]
+    columns = 3
+    per_column = -(-len(legend_slices) // columns) or 1
+    col_x = [PAD + i * bar_w / columns for i in range(columns)]
     rows = []
     for i, s in enumerate(legend_slices):
         pct = to_fixed((s.total / data.total_lines) * 100, 1) if data.total_lines > 0 else "0.0"
@@ -398,7 +402,7 @@ def render_full(data, theme, t, now=0, all_langs=False, static=False, split=Fals
 
     # "code edits" only exists on a claude-mode card; see docs/counting.md.
     if data.total_actions > 0:
-        footer = stat(PAD, str(data.total_actions), t["edits"]) + stat(PAD + 200, str(data.total_commits), t["commits"])
+        footer = stat(PAD, str(data.total_actions), t["edits"]) + stat(PAD + bar_w / 2, str(data.total_commits), t["commits"])
     else:
         footer = stat(PAD, str(data.total_commits), t["commits"])
 
@@ -448,7 +452,7 @@ def render_full(data, theme, t, now=0, all_langs=False, static=False, split=Fals
 
 # -- wide -----------------------------------------------------------------------
 
-WIDE_W = 840
+WIDE_W = README_WIDTH
 WIDE_PAD = 28
 WIDE_INNER = WIDE_W - WIDE_PAD * 2
 
@@ -492,7 +496,7 @@ def _wide_legend(data, slices, t, top):
     if not slices:
         return "", top
     PAD = WIDE_PAD
-    columns = 4 if len(slices) > 9 else 3
+    columns = 3
     row_h = 22
     per_column = -(-len(slices) // columns)
     col_w = WIDE_INNER / columns
@@ -563,7 +567,10 @@ def render_wide(data, theme, t, now=0, all_langs=False, static=False, split=Fals
     heat_top = legend_bottom + 22
     heat_svg, heat_bottom, column_x, pins_bottom = _wide_heat_and_pins(data, heat_top)
 
-    content_bottom = max(heat_bottom, pins_bottom)
+    pills = _Pills(column_x, W - PAD, pins_bottom + (4 if data.pins else 0))
+    _add_pills(pills, data)
+    pills_bottom = pills.top + (pills.row + 1) * 28 if pills.parts else 0
+    content_bottom = max(heat_bottom, pins_bottom, pills_bottom)
     div_y = content_bottom + 20
     foot_y = div_y + 26
 
@@ -574,20 +581,17 @@ def render_wide(data, theme, t, now=0, all_langs=False, static=False, split=Fals
         )
 
     if data.total_actions > 0:
-        footer = stat(PAD, str(data.total_actions), t["edits"]) + stat(PAD + 220, str(data.total_commits), t["commits"])
+        footer = stat(PAD, str(data.total_actions), t["edits"]) + stat(PAD + WIDE_INNER / 2, str(data.total_commits), t["commits"])
     else:
         footer = stat(PAD, str(data.total_commits), t["commits"])
 
     prov = provenance(data, t, now, static)
     provenance_svg = (
-        f'<text class="faint" x="{W - PAD}" y="{num(foot_y)}" {MONO} font-size="9.5" text-anchor="end">{escape_xml(prov)}</text>'
+        f'<text class="faint" x="{W - PAD}" y="{num(foot_y + 18)}" {MONO} font-size="9.5" text-anchor="end">{escape_xml(prov)}</text>'
         if prov else ""
     )
 
-    pills = _Pills(column_x, W - PAD, pins_bottom + (4 if data.pins else 0))
-    _add_pills(pills, data)
-    pills_bottom = pills.top + (pills.row + 1) * 28 if pills.parts else 0
-    H = max(foot_y + (14 if split else 18), pills_bottom + (42 if split else 46))
+    H = foot_y + (32 if split else 36)
 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="{W}" height="{num(H)}" viewBox="0 0 {W} {num(H)}" role="img" aria-label="devcard {escape_xml(data.github_user)}">
   <style>{css_for(theme)}</style>

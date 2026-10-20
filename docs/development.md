@@ -19,22 +19,25 @@ The Python side is standard library only, so there is nothing to install for it
 
 ## Golden files
 
-`tests/golden/` holds 46 SVGs rendered by the legacy Worker's TypeScript renderer,
+`tests/golden/` holds the original 46 SVGs rendered by the legacy Worker's TypeScript renderer,
 and `tests/golden/fixtures.json` the events they were rendered from.
 `worker/test/golden.test.ts` sends those events through the Worker's real
 `/ingest` and renders every listed variant through `/svg` with the clock pinned;
 `tests/test_golden.py` loads the same events into a real hook database and
-renders them with `devcard/`. Both compare against the same files (the Python
-side normalises whitespace; today the outputs are byte-identical).
+renders them with `devcard/`. Compact Python layouts still compare against the
+same files (normalising whitespace). Python `full` and `wide` now use a 712px
+README canvas and compare against separately generated SVGs in
+`tests/golden/readme/`. The original files remain the Worker's references.
 
-So a change to either renderer fails a suite until the other matches or the files
-are regenerated on purpose:
+Regenerate references deliberately after a renderer change:
 
 ```bash
 cd worker && npx vitest run test/golden.test.ts -u    # rewrite tests/golden/ from the Worker
+python scripts/regenerate_readme_goldens.py          # from repo root: Python full/wide + opt-in hashes
 ```
 
-Commit the regenerated files together with the matching change in `devcard/`.
+Include regenerated files together with the matching renderer change. The
+Python generator leaves all legacy references untouched.
 
 The Worker suite runs inside workerd against a real local D1 through
 [`@cloudflare/vitest-plugin`](https://developers.cloudflare.com/workers/testing/vitest-integration/),

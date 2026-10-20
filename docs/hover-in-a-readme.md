@@ -60,8 +60,13 @@ The body has no language bar; the legend moves up to close that space while
 the heatmap, footer and other content remain. Its frame extends below the
 viewBox, clipping away the bottom border and rounded bottom corners. The
 34px strip supplies the bar, space around it, bottom border and corners.
-Both rows share the 840px canvas, 28px padding, background, border and 14px
+Both rows share the 712px canvas, 28px padding, background, border and 14px
 corner radius, so together they form one card.
+
+The body fills the column and the strip's percentages sum to 100%. At an 830px
+display width, both rows scale by 830/712 ≈ 1.166×, matching the former 480px
+card at 560px. They scale together on narrower screens; no fixed pixel display
+width is needed in the README.
 
 `full` and `wide` support this split, including partial-consent cards with a
 language section. Other layouts and cards without languages fall back to the
@@ -88,7 +93,7 @@ imprecise.
 
 ## The price
 
-Each slice is floored at 4px at the nominal 840px card width, paid for out of
+Each slice is floored at 4px at the nominal 712px card width, paid for out of
 the segments that have pixels to spare. Measured on the original Worker card: seven of its eighteen
 languages draw thinner than that floor, five of them under a single pixel and
 two under a tenth of one — Java at 0.09px, Ruby at 0.007px. A bar that draws

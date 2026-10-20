@@ -6,13 +6,13 @@ their percentage widths and labels must be refreshed along with the data.
 from . import config
 from .data import with_other_bucket
 from .jsfmt import js_round, num, to_fixed
-from .render import WIDE_PAD, WIDE_W, split_supported
+from .render import README_WIDTH, WIDE_PAD, split_supported
 from .strings import STRINGS, lang_name
 from .svg import escape_xml, slice_color, slice_title
 
 START = "<!-- devcard:start -->"
 END = "<!-- devcard:end -->"
-WIDTH = WIDE_W
+WIDTH = README_WIDTH
 PAD = WIDE_PAD
 INNER = WIDTH - 2 * PAD
 STRIP_HEIGHT = 34

@@ -154,7 +154,7 @@ class CommandsTest(TempDirTest):
             with mock.patch.object(lib, "repo_count", lambda _c: 1):
                 self.assertEqual(cli.main(["render", "--out", out, "--user", "octo-cat", "--layout", "wide"]), 0)
         with open(os.path.join(out, "card.svg"), encoding="utf-8") as f:
-            self.assertIn('width="840"', f.read())
+            self.assertIn('width="712"', f.read())
 
     def test_status_without_config(self):
         with Home(self.tmp, "a"), contextlib.redirect_stdout(io.StringIO()) as buf:

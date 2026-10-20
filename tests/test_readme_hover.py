@@ -85,13 +85,14 @@ class BlockTest(unittest.TestCase):
                         full = ET.fromstring(render.render(c, theme, layout=layout, now=NOW, static=True))
                         raw = render.render(c, theme, layout=layout, now=NOW, static=True, split=True)
                         body = ET.fromstring(raw)
-                        self.assertEqual(body.get("width"), "840")
-                        self.assertEqual(body.get("viewBox"), f'0 0 840 {body.get("height")}')
+                        self.assertEqual(body.get("width"), "712")
+                        self.assertEqual(body.get("width"), full.get("width"))
+                        self.assertEqual(body.get("viewBox"), f'0 0 712 {body.get("height")}')
                         ns = {"s": "http://www.w3.org/2000/svg"}
                         frame = body.find("s:rect[@class='bg brd']", ns)
                         # Bottom corners and stroke lie below the viewBox, as in the Worker.
                         self.assertGreaterEqual(float(frame.get("height")) - 14, float(body.get("height")))
-                        self.assertEqual(frame.get("width"), "839")
+                        self.assertEqual(frame.get("width"), "711")
                         self.assertEqual(frame.get("rx"), str(readme.CORNER))
                         self.assertIsNone(body.find(".//s:rect[@class='track']", ns))
                         self.assertIsNone(body.find(".//s:rect[@class='hit']", ns))
@@ -147,7 +148,7 @@ class BlockTest(unittest.TestCase):
             for suffix, bg in (("", "#ffffff"), ("-dark", "#0f1117")):
                 raw = files[f"lang/{i}{suffix}.svg"]
                 svg = ET.fromstring(raw)
-                self.assertAlmostEqual(float(svg.get("width")), 840 * units / 1_000_000, places=6)
+                self.assertAlmostEqual(float(svg.get("width")), 712 * units / 1_000_000, places=6)
                 self.assertIn(bg.encode(), raw)
                 self.assertNotIn(b"prefers-color-scheme", raw)
                 for private in (b"project", b"email", b"source_id"):

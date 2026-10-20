@@ -74,6 +74,13 @@ What "public API" means for devcard, since it is not a library:
 
 ### Changed
 
+- Python `full` (default) and `wide` cards now share a 712px README canvas,
+  including partial-consent cards and hover body/strip pairs. The generated
+  snippet fills the column with `width="100%"`: content at 830px displays at
+  the scale of the former 480px card at 560px. Font sizes stay unchanged;
+  full uses three legend columns and wide keeps pills above its footer.
+  Python full/wide goldens are regenerated separately from the unchanged
+  legacy Worker references. Banner, half and vertical geometry is unchanged.
 - The Cloudflare Worker (`worker/`, `install.py`) is now the **legacy** path. It
   keeps working, unchanged, until the existing card is migrated.
 - `register_claude_hook` moved from `install.py` to `hook/install_claude_hook.py`

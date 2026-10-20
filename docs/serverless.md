@@ -114,7 +114,7 @@ body omits the language bar and closes the space it occupied, keeping the
 legend, heatmap and footer. Its rounded frame extends below the viewBox, so
 the bottom is flat, with no bottom border or corners. The strip supplies the
 bar, surrounding space, bottom border and rounded bottom corners. Body and
-strip share an 840px canvas, 28px padding, background, border and corner radius.
+strip share a 712px canvas, 28px padding, background, border and corner radius.
 Every image uses `align="top"`, with no whitespace between adjacent tags;
 the strip is last so paragraph line-box slack falls below the card.
 Each `<picture>` has a dark source; slices carry an
@@ -129,7 +129,7 @@ do not generate hover files. The normal `card.svg` and `card-dark.svg` embeds
 keep their existing layouts and language bars unchanged.
 
 Widths use the legacy Worker's layout: narrow segments get a four-pixel target
-at the nominal 840-pixel card width, paid for from larger segments. Titles keep
+at the nominal 712-pixel card width, paid for from larger segments. Titles keep
 the true shares. Integer percentage units and end caps make the row total
 exactly 100%, without spaces between images. Old body and slice files disappear from
 the generated tree when the number of slices shrinks, hover is disabled or
