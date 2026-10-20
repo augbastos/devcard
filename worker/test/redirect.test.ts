@@ -5,7 +5,7 @@ import { RETIRE_AT } from "../src/variants";
 import { ev, ingestRequest, resetDb, WRONG_TOKEN } from "./helpers";
 
 const REPO = "https://github.com/augbastos/devcard";
-const RAW = "https://raw.githubusercontent.com/augbastos/devcard/devcard-data/";
+const RAW = "https://raw.githubusercontent.com/augbastos/augbastos/devcard-data/";
 
 async function call(path: string, method = "GET"): Promise<Response> {
   const ctx = createExecutionContext();
