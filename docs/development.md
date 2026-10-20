@@ -50,7 +50,9 @@ stubbed at the outbound boundary; anything unexpected comes back as a 599.
 
 The Python suite builds throwaway git repositories and runs real `git` against
 them — the merge and hook-installation behaviour it pins is behaviour of git,
-which a mock would only have agreed with. The installer is run end to end
+which a mock would only have agreed with. Publishing uses temporary bare
+repositories; hook integration covers merges, worktrees, `core.hooksPath`,
+husky and paths with spaces. The installer is run end to end
 against a fake Node/npm/Wrangler, which is how its ordering (every check before
 any change, the Worker secret before its local copy) and its re-run path are
 tested without an account.

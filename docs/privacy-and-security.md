@@ -30,9 +30,19 @@ categories without prompts. `devcard privacy` displays the current allowlist
 and locally recorded publication status. `privacy --grant <category>` and
 `privacy --revoke <category>` save the choice and force a remote update. Denied
 fields are omitted from JSON, and missing sections are omitted from the card.
-`card.show_agents` and `card.show_usage` are display toggles: even when false,
-authorized agent/usage data is readable in machine JSON. Each line renders only
-when its data category is consented and its display toggle is on.
+`card.show_agents`, `card.show_usage` and `card.show_models` are display toggles:
+even when false, authorized agent/usage data is readable in machine JSON.
+Each line renders only when its data category is consented and its display
+toggle is on.
+
+```bash
+devcard init --yes --user <you> --repo <you>/<you> --consent languages,activity
+devcard privacy
+devcard privacy --grant totals
+devcard privacy --revoke activity
+devcard unpublish
+devcard serve
+```
 
 Old configs without consent publish **nothing new**. Hooks keep capturing and
 write a one-line local notice to `errors.log` at most once a day; they never

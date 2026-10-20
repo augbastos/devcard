@@ -4,6 +4,14 @@
 > [serverless card](serverless.md): `pipx install git+https://github.com/augbastos/devcard`
 > then `devcard init`. The Worker stays in `worker/` until the existing card is migrated.
 
+This path uses Cloudflare Worker + D1, with hooks syncing every ~20 seconds.
+It needs Python 3.11+, Node 22+, npm, git and a Cloudflare account. For the
+installer rather than the manual steps below:
+
+```bash
+git clone https://github.com/augbastos/devcard && cd devcard && python install.py
+```
+
 `python install.py` does all of this for you. These are the same steps by hand,
 for when you want to see each one. Most of the installer's wall time is `npm ci`
 and the first Cloudflare deploy.

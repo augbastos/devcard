@@ -44,6 +44,12 @@ for the card itself — the SVG is plain template strings.
 
 Changes show on the next publish; `devcard publish --force` to see them now.
 
+You can also choose the layout, theme and language during setup:
+
+```bash
+devcard init --layout wide --theme terminal --lang pt
+```
+
 The README snippet uses `width="100%"` to fill its column. Both `full` and
 `wide` have a 712px intrinsic canvas, including partial-consent cards and README
 hover bodies. At an 830px display width the scale is 830/712 ≈ 1.166×, matching
