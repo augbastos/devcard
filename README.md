@@ -15,7 +15,8 @@
 <!-- devcard:end -->
 
 <p align="center"><em>↑ The maintainer's card, published by <code>devcard publish</code> to this repository's <code>devcard-data</code> branch.</em></p>
-A serverless card is one image per theme, without the per-language hover.</em></p>
+The serverless card can also show per-language tooltips in a README with an
+opt-in, daily-refreshed language bar. [Set it up →](docs/serverless.md#readme-language-hover)
 
 devcard shows **what came out of your coding sessions**. A hook records the edits
 your agent makes — or, for any other tool, each commit — and your machine turns
@@ -59,6 +60,13 @@ and prints the snippet for your README:
   <img alt="devcard" src="https://raw.githubusercontent.com/<owner>/<repo>/devcard-data/card.svg">
 </picture>
 ```
+
+For per-language tooltips, run `devcard readme --enable` and wrap your card in
+`<!-- devcard:start -->` and `<!-- devcard:end -->` markers in `README.md` on the
+publish repository's default branch. With `languages` consent, the next publish
+adds a hoverable language bar; changed labels and widths refresh at most once
+per 24 hours per machine. This adds a normal README commit, separate from the
+generated data branch. `devcard readme --disable` stops future README updates.
 
 With consent, the hooks publish by themselves. `devcard publish --force` publishes
 now; `devcard render --out DIR` writes this machine's card locally without

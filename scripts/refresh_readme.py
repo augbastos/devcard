@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Rewrite the hoverable card block in a README from live data.
+"""Legacy Worker client: rewrite the hoverable card block from live data.
+
+Serverless installations use `devcard readme --enable` and `devcard publish`
+instead. Both paths share devcard.readme.replace_block for LF/CRLF preservation.
 
 The card's language bar is served as one image per language so that each can
 carry its own `title` — that is the only way a GitHub README gets a tooltip for
@@ -24,17 +27,27 @@ from __future__ import annotations
 
 import argparse
 import os
+from pathlib import Path
 import re
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
 
-START = "<!-- devcard:start -->"
-END = "<!-- devcard:end -->"
+# Keep the legacy standalone invocation working from any current directory.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from devcard.readme import END as END, START as START, replace_block as _replace_block
 
 # Any devcard image already in the file tells us where the Worker lives.
 ORIGIN_RE = re.compile(r'src="(https?://[^"/]+)/svg\?')
+
+
+def replace_block(readme: str, block: str) -> str:
+    """Keep the legacy script API while sharing the package's replacement."""
+    try:
+        return _replace_block(readme, block)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
 
 
 def find_origin(readme: str) -> str | None:
@@ -51,20 +64,6 @@ def fetch_block(origin: str, user: str | None, timeout: float) -> str:
         if response.status != 200:
             raise RuntimeError(f"{url} returned HTTP {response.status}")
         return response.read().decode("utf-8").strip()
-
-
-def replace_block(readme: str, block: str) -> str:
-    start = readme.find(START)
-    end = readme.find(END)
-    if start == -1 or end == -1 or end < start:
-        raise SystemExit(
-            f"markers not found: the README needs {START} and {END} around the card"
-        )
-    # Whatever the file already uses. Joining with "\n" regardless would rewrite
-    # a CRLF README's two inserted lines as LF, leaving the file with mixed
-    # endings and a diff noisier than the change.
-    newline = "\r\n" if "\r\n" in readme else "\n"
-    return readme[: start + len(START)] + newline + block + newline + readme[end:]
 
 
 def main(argv: list[str]) -> int:

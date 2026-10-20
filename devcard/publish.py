@@ -25,7 +25,7 @@ import subprocess
 import time
 import warnings
 
-from . import config, data, usage
+from . import config, data, readme, usage
 from ._hook import lib
 from .render import render
 from .themes import theme_pair
@@ -41,6 +41,8 @@ AVATAR_FAILURE_TTL = 3600
 AVATAR_MAX_BYTES = 256 * 1024
 BRANCH_MARKER = b'{"format": 1}\n'
 MACHINE_PATH_RE = re.compile(r"machines/[A-Za-z0-9_-]{1,64}\.json\Z")
+SLICE_PATH_RE = re.compile(r"lang/(?:[0-9]+|cap-left|cap-right)(?:-dark)?\.svg\Z")
+README_INTERVAL = 86400
 
 # What git exports to a hook so that commands find *that* repository
 # (`git rev-parse --local-env-vars`, plus the -c passthrough). Inherited by a
@@ -190,7 +192,8 @@ class _Repo:
             name = name.decode("utf-8", "replace")
             if (mode != b"100644" or kind != b"blob"
                     or (name not in (".devcard", "README.md", "card.svg", "card-dark.svg")
-                        and not MACHINE_PATH_RE.fullmatch(name))):
+                        and not MACHINE_PATH_RE.fullmatch(name)
+                        and not SLICE_PATH_RE.fullmatch(name))):
                 raise PublishError(f"refusing to publish: {BRANCH} is not owned by devcard (unexpected layout)")
             names.add(name)
         if not {".devcard", "card.svg", "card-dark.svg"} <= names:
@@ -228,6 +231,48 @@ class _Repo:
     def push(self, commit, expected):
         lease = f"--force-with-lease={REF}:{expected or ''}"
         proc = self.git("push", "-q", lease, "origin", f"{commit}:{REF}", check=False)
+        return proc.returncode == 0, proc.stderr.decode("utf-8", "replace").strip()
+
+    def default_head(self):
+        """Fetch the existing default branch without assuming main or master."""
+        listing = self.out("ls-remote", "--symref", "origin", "HEAD")
+        match = re.search(r"^ref: (refs/heads/[^\s]+)\tHEAD$", listing, re.MULTILINE)
+        if not match:
+            return None
+        ref = match[1]
+        if ref == REF:
+            raise PublishError("refusing to update README on the data branch")
+        tracking = "refs/remotes/origin/devcard-readme"
+        self.git("fetch", "-q", "--no-tags", "origin", f"+{ref}:{tracking}")
+        return ref, self.out("rev-parse", tracking)
+
+    def readme_blob(self, head):
+        entry = self.git("ls-tree", "-z", head, "--", "README.md").stdout
+        if not entry:
+            return None
+        if not entry.startswith(b"100644 blob "):
+            raise ValueError("README.md is not a regular UTF-8 file; hover skipped")
+        return self.git("cat-file", "blob", f"{head}:README.md").stdout
+
+    def readme_commit(self, head, body, now):
+        """Change one blob, preserving the complete tree and commit history."""
+        index = os.path.join(self.path, "devcard-readme-index")
+        env = {"GIT_INDEX_FILE": index}
+        try:
+            self.git("read-tree", head, env=env)
+            blob = self.out("hash-object", "-w", "--stdin", stdin=body)
+            self.git("update-index", "--cacheinfo", "100644", blob, "README.md", env=env)
+            tree = self.out("write-tree", env=env)
+        finally:
+            if os.path.exists(index):
+                os.remove(index)
+        stamp = f"{int(now)} +0000"
+        author = {**AUTHOR_ENV, "GIT_AUTHOR_DATE": stamp, "GIT_COMMITTER_DATE": stamp}
+        return self.out("commit-tree", tree, "-p", head, "-m", "devcard: refresh language bar", env=author)
+
+    def push_readme(self, commit, ref):
+        # Ordinary fast-forward only. A rejected update waits until the next day.
+        proc = self.git("push", "-q", "origin", f"{commit}:{ref}", check=False)
         return proc.returncode == 0, proc.stderr.decode("utf-8", "replace").strip()
 
 
@@ -334,9 +379,8 @@ def local_aggregate(cfg, now, repo_count_fn=None):
         conn.close()
 
 
-def render_files(cfg, aggregates, now, avatar=None):
-    """{name: bytes} for the two card files, from any number of machine aggregates."""
-    card = data.card_data(
+def _card_data(cfg, aggregates, now, avatar=None):
+    return data.card_data(
         data.merge([data.consented(agg, config.consents(cfg)) for agg in aggregates], now=now),
         cfg["github_user"], now, locale=cfg["lang"],
         tz=cfg.get("timezone") or None, avatar=avatar,
@@ -345,11 +389,19 @@ def render_files(cfg, aggregates, now, avatar=None):
               for p in cfg.get("pins") or [] if isinstance(p, dict) and "repo" in p],
         card=cfg.get("card"),
     )
+
+
+def render_files(cfg, aggregates, now, avatar=None):
+    """{name: bytes} for cards and opt-in hover slices, from consented aggregates."""
+    card = _card_data(cfg, aggregates, now, avatar)
     light, dark = theme_pair(cfg["theme"])
-    return {
+    files = {
         "card.svg": render(card, light, cfg["lang"], cfg["layout"], now=now, static=True).encode("utf-8"),
         "card-dark.svg": render(card, dark, cfg["lang"], cfg["layout"], now=now, static=True).encode("utf-8"),
     }
+    if readme.enabled(cfg):
+        files.update(readme.slice_files(card, light, dark))
+    return files
 
 
 def encode_aggregate(agg):
@@ -370,10 +422,82 @@ def render_local(cfg, out_dir, now=None, repo_count_fn=None, avatar_fn=None):
     paths = []
     for name, body in render_files(cfg, [agg], now, avatar).items():
         path = os.path.join(out_dir, name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "wb") as f:
             f.write(body)
         paths.append(path)
     return paths
+
+
+def _readme_hint(state, target, kind="marker"):
+    key = f"readme_{kind}_hint"
+    if state.get(key) != target:
+        message = ("README.md is not a regular UTF-8 file; hover skipped" if kind == "file" else
+                   "README hover skipped: add <!-- devcard:start --> and <!-- devcard:end --> around the card in README.md.")
+        lib.log_error(message)
+        state[key] = target
+        _write_json(config.state_path(), state)
+
+
+def _readme_failure(state, target, now, reason, message):
+    # Keep only a fixed short reason, never git stderr (which may contain URLs).
+    state.update({"readme_attempt_target": target, "last_readme_attempt": now,
+                  "readme_failure_reason": reason})
+    try:
+        _write_json(config.state_path(), state)
+    except OSError:
+        lib.log_error("README hover: could not save retry state; 24 h backoff could not be persisted")
+    lib.log_error(message)
+
+
+def refresh_readme(repo, cfg, aggregates, now, state):
+    """Refresh a marked README at most daily, after the card files are available.
+
+    The clock is local to this machine and destination; --force does not lift it.
+    README git failures never fail the card publication. Failed attempts also
+    back off for a day, so a protected default branch is not retried per hook.
+    """
+    if not readme.enabled(cfg):
+        return
+    target = cfg["repo"] + "\n" + config.remote_url(cfg)
+    if state.get("readme_target") == target and now - state.get("last_readme_push", 0) <= README_INTERVAL:
+        return
+    if state.get("readme_attempt_target") == target and now - state.get("last_readme_attempt", 0) <= README_INTERVAL:
+        return
+    try:
+        _refresh_readme(repo, cfg, aggregates, now, state, target)
+    except (PublishError, OSError):
+        _readme_failure(state, target, now, "README git operation failed",
+                        f"README hover: {cfg['repo']} README update failed; retrying in 24 h")
+
+
+def _refresh_readme(repo, cfg, aggregates, now, state, target):
+    block = readme.build_block(cfg["repo"], _card_data(cfg, aggregates, now), cfg["lang"])
+    default = repo.default_head()
+    try:
+        raw = repo.readme_blob(default[1]) if default else None
+        text = raw.decode("utf-8") if raw is not None else ""
+    except ValueError:
+        _readme_hint(state, target, "file")
+        return
+    try:
+        updated = readme.replace_block(text, block)
+    except ValueError:
+        _readme_hint(state, target)
+        return
+    if updated == text:
+        return
+    ref, head = default
+    commit = repo.readme_commit(head, updated.encode("utf-8"), now)
+    ok, _detail = repo.push_readme(commit, ref)
+    if not ok:
+        _readme_failure(state, target, now, "default branch rejected the update (protected?)",
+                        f"README hover: {cfg['repo']} default branch rejected the update (protected?); retrying in 24 h")
+        return
+    state.update({"readme_target": target, "last_readme_push": now,
+                  "readme_attempt_target": target, "last_readme_attempt": now})
+    state.pop("readme_failure_reason", None)
+    _write_json(config.state_path(), state)
 
 
 def publish(cfg, now=None, force=False, repo_count_fn=None, avatar_fn=None):
@@ -399,7 +523,8 @@ def publish(cfg, now=None, force=False, repo_count_fn=None, avatar_fn=None):
         saved = config.load()
         if saved and saved.get("repo") == cfg["repo"] and config.remote_url(saved) == config.remote_url(cfg):
             current = config.consents(saved)
-            cfg = {**cfg, "consent": {key: value and current[key] for key, value in config.consents(cfg).items()}}
+            cfg = {**cfg, "consent": {key: value and current[key] for key, value in config.consents(cfg).items()},
+                   "readme_hover": cfg.get("readme_hover") is True and saved.get("readme_hover") is True}
             if not config.has_consent(cfg):
                 raise PublishError("publication consent was revoked; run `devcard privacy` to review")
         state = _read_json(config.state_path())
@@ -462,12 +587,14 @@ def publish(cfg, now=None, force=False, repo_count_fn=None, avatar_fn=None):
             if tree == repo.tree_of(head):
                 state["published_consent"] = config.consents(cfg)
                 _write_json(config.state_path(), state)
+                refresh_readme(repo, cfg, aggregates, now, state)
                 return "unchanged"
             ok, detail = repo.push(repo.commit(tree, now), head)
             if ok:
                 state["last_push"] = now
                 state["published_consent"] = config.consents(cfg)
                 _write_json(config.state_path(), state)
+                refresh_readme(repo, cfg, aggregates, now, state)
                 return "published"
         raise PublishError(f"push rejected {PUSH_ATTEMPTS} times ({detail})")
 

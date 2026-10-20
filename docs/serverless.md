@@ -68,7 +68,7 @@ On each machine, in `~/.claude/devcard/` (next to the hook's database):
 | `source-id` | This machine's random id (16 random bytes). Names its file on the branch. |
 | `events.db` | The hook's local database. Holds working directories; never published. |
 | `publish/<owner>__<name>/` | A private bare git repository publishing goes through. Safe to delete. |
-| `publish-state.json` | When this machine last checked and last pushed. Delete it to lift the debounce once. |
+| `publish-state.json` | When this machine last checked, last pushed the card and last attempted/updated the README for the target repository, plus a short README failure reason if needed. Delete it to reset the local timers. |
 | `publish.lock`, `publish-pending` | A publish in progress, and the one waiting for the window to close. Removed when they finish; ignored after 10 and 20 minutes. |
 | `avatar.json` | Your GitHub avatar as a data URI, cached for a day. |
 
@@ -77,9 +77,75 @@ On the branch `devcard-data` of the repository you chose:
 | Path | What |
 |---|---|
 | `card.svg`, `card-dark.svg` | The card, merged across every machine, for light and dark GitHub themes |
+| `lang/<n>.svg`, `lang/<n>-dark.svg`, `lang/cap-*.svg` | Optional language-hover slices and end caps, with light/dark variants |
 | `machines/<id>.json` | One file per machine; denied categories are also removed from carried files |
 | `README.md` | A note that the branch is generated |
 | `.devcard` | Ownership marker with format version 1 |
+
+## README language hover
+
+`readme_hover` defaults to `false`. `devcard init` asks whether to enable it
+after the publication consent questions, default **No**. For unattended setup,
+pass `--readme-hover` explicitly. You can change the setting later without
+publishing anything:
+
+```bash
+devcard readme --enable
+devcard readme --disable
+devcard readme
+```
+
+The setting only takes effect with `consent.languages: true`; it grants no
+publication consent itself. Add these markers around your existing card in
+`README.md` on the publish repository's default branch:
+
+```html
+<!-- devcard:start -->
+Your existing card snippet goes here.
+<!-- devcard:end -->
+```
+
+On publish, devcard commits small SVGs alongside the full card on `devcard-data`.
+It uses the card legend's language/Other grouping, colours and slice titles.
+The README block contains the full card `<picture>` followed by a row of
+adjacent per-language `<picture>` elements, each with a dark source and an
+`<img title="Python 41.8%">`. URLs point to `raw.githubusercontent.com` on
+`devcard-data`; no Worker is involved. A browser cannot hover inside a single
+SVG embedded as an image, so each tooltip needs its own image.
+
+Widths use the legacy Worker's layout: narrow segments get a four-pixel target
+at the nominal 840-pixel card width, paid for from larger segments. Titles keep
+the true shares. Integer percentage units and end caps make the row total
+exactly 100%, without spaces between images. Old slice files disappear from
+the generated tree when the number of slices shrinks, hover is disabled or
+languages consent is revoked.
+
+The HTML titles and widths live in the README. If both markers exist and the
+block changed, devcard makes one ordinary commit, `devcard: refresh language bar`,
+on the existing default branch, preserving its history, other files and the
+README's LF/CRLF endings. A missing README or markers causes a skip and a
+one-time local log hint. Invalid UTF-8, symlink or executable README files get
+a distinct hint and are left untouched. An unchanged block never creates a
+commit. A failed README update never fails the card publication: its attempt
+timestamp and a short reason are saved locally, and one log line reports it.
+Further README attempts wait more than 24 hours, even with `publish --force`,
+before fetching or pushing the default branch again. Branch protection can
+reject this direct README update when it requires a pull request. A competing
+edit that rejects a fast-forward push is preserved and retried the next day.
+
+README updates are limited to one per **more than 24 hours**, recorded locally
+per machine and target repository; `publish --force` does not bypass this timer.
+Several machines have independent timers. Images can update every 15 minutes
+while README shares and widths wait for the next eligible publish. If a publish
+shrinks the slice set, old README image URLs can be unavailable until that
+refresh, because stale slice files are removed on every data publish.
+Disabling hover or revoking languages stops README updates; remove the marked block
+manually if you also want to remove previously written labels. Existing commits
+and GitHub caches can retain old labels.
+
+`scripts/refresh_readme.py` remains an optional legacy Worker client. Its
+newline-preserving marker replacement is shared with the package; serverless
+publishing does not call the script or its `/embed` endpoint.
 
 ## Several machines
 
@@ -156,6 +222,7 @@ devcard publish [--force]    # publish now (debounced unless --force)
 devcard render --out DIR     # this machine's card only, written locally; publishes nothing
 devcard status               # configuration, machine id, last push, embed snippet
 devcard privacy              # review or --grant/--revoke a publication category
+devcard readme [--enable|--disable]  # opt-in daily README language hover
 devcard unpublish            # disable publication and remove the owned data branch
 ```
 

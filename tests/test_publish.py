@@ -100,6 +100,11 @@ class BranchGuardTest(TempDirTest):
     def test_foreign_files_never_reach_a_write(self):
         self.attempt([".devcard", "card.svg", "card-dark.svg", "important.txt"])
 
+    def test_foreign_language_files_never_reach_a_write(self):
+        for name in ("lang/evil.svg", "lang/sub/0.svg"):
+            with self.subTest(name=name):
+                self.attempt([".devcard", "card.svg", "card-dark.svg", name])
+
     def test_default_branch_never_reaches_a_write(self):
         self.attempt([".devcard", "card.svg", "card-dark.svg"], default=True)
 
@@ -757,7 +762,7 @@ class ConsentTest(TempDirTest):
     def test_init_prompts_default_no_even_when_rerun_with_previous_grants(self):
         with Home(self.tmp, "a"), mock.patch.object(cli, "publish") as send:
             config.save(settings(self.bare_remote(), config.FULL_CONSENT))
-            code, _ = init(["--mode", "claude"], answers=["", "", *[""] * len(config.CONSENT_CATEGORIES)])
+            code, _ = init(["--mode", "claude"], answers=["", "", *[""] * len(config.CONSENT_CATEGORIES), ""])
             self.assertEqual(code, 0)
             self.assertEqual(config.consents(config.load()), config.NO_CONSENT)
             send.assert_not_called()

@@ -185,6 +185,9 @@ class Init:
             elif not self.args.yes:
                 consent[key] = self.ask(f"  Publish {key}? [y/N]: ").lower() in ("y", "yes")
         cfg["consent"] = consent
+        cfg["readme_hover"] = self.args.readme_hover
+        if not self.args.readme_hover and not self.args.yes:
+            cfg["readme_hover"] = self.ask("  Enable language hover in your README (daily commit)? [y/N]: ").lower() in ("y", "yes")
 
         self.out("\n[4/5] Saving settings")
         cfg.update({"github_user": user, "repo": repo})
@@ -214,6 +217,8 @@ class Init:
         self.out(f"  {MIN_INTERVAL // 60} minutes while you work; GitHub's image cache adds a few more.")
         self.out("\n  Paste this into your README:\n")
         self.out(config.embed_html(repo))
+        if cfg["readme_hover"]:
+            self.out("  Wrap the card in <!-- devcard:start --> and <!-- devcard:end --> to enable daily hover refreshes.")
         self.out("=" * 66)
         return 0
 
@@ -299,6 +304,20 @@ def cmd_unpublish(_args):
     return 0
 
 
+def cmd_readme(args):
+    cfg = config.load()
+    if cfg is None:
+        print("not configured — run `devcard init`")
+        return 1
+    if args.enable or args.disable:
+        cfg["readme_hover"] = args.enable
+        config.save(cfg)
+    print(f"README language hover: {'enabled' if cfg.get('readme_hover') is True else 'disabled'}")
+    print("Requires languages consent and <!-- devcard:start --> / <!-- devcard:end --> in README.md.")
+    print("On publish, changed blocks get at most one README commit per 24 hours on this machine.")
+    return 0
+
+
 def _consent_list(value):
     categories = value.split(",")
     if any(key not in config.CONSENT_CATEGORIES for key in categories):
@@ -372,6 +391,7 @@ def build_parser():
     p.add_argument("--git-folder", action="append", help="(git mode) a repo or folder of repos; repeatable")
     p.add_argument("--yes", "-y", action="store_true", help="accept setup defaults; never grants publication consent")
     p.add_argument("--consent", type=_consent_list, help="comma-separated categories to explicitly authorize")
+    p.add_argument("--readme-hover", action="store_true", help="enable daily README language hover refreshes (requires languages consent)")
     card_options(p)
     p.set_defaults(func=lambda a: Init(a).main())
 
@@ -397,6 +417,12 @@ def build_parser():
     group.add_argument("--grant", choices=tuple(config.CONSENT_CATEGORIES), action="append")
     group.add_argument("--revoke", choices=tuple(config.CONSENT_CATEGORIES), action="append")
     p.set_defaults(func=cmd_privacy)
+
+    p = sub.add_parser("readme", help="show or enable/disable daily README language hover refreshes")
+    group = p.add_mutually_exclusive_group()
+    group.add_argument("--enable", action="store_true")
+    group.add_argument("--disable", action="store_true")
+    p.set_defaults(func=cmd_readme)
 
     p = sub.add_parser("unpublish", help="disable publication and delete the verified devcard-owned branch")
     p.set_defaults(func=cmd_unpublish)
