@@ -4,16 +4,22 @@
 of a public repository you own. There is no server, no database in the cloud,
 no token and no Node. This page is how it works and where everything lives.
 
+```mermaid
+flowchart LR
+    subgraph M["each of your machines"]
+        CC["Claude Code<br/>PostToolUse hook"] -->|"every Edit / Write / Bash"| DB[("local SQLite")]
+        GT["git post-commit hook"] -->|"git diff --numstat"| DB
+        DB -->|"aggregate, render<br/>at most every 15 min"| P["devcard publish"]
+    end
+    P -->|"one commit, force-with-lease"| B["your repo, branch devcard-data<br/>card.svg · card-dark.svg · machines/&lt;id&gt;.json"]
+    E["your README"] -->|"raw.githubusercontent.com"| B
 ```
-your machine                                            your repository, branch devcard-data
-────────────                                            ────────────────────────────────────
-hook ─> ~/.claude/devcard/events.db                      README.md
-          │                                              card.svg        ◄── <picture> in your README
-          └─ aggregate ─> machines/<id>.json ──┐         card-dark.svg   ◄── (dark GitHub theme)
-                                               ├─ push ─> machines/<id-of-this-machine>.json
-          other machines' files (fetched) ─────┘         machines/<id-of-another-machine>.json
-                     merge ─ render ─┘
-```
+
+Events land locally first, so capture works offline and never blocks your
+session. Publishing reads every machine's file from the branch, replaces only
+its own, applies the consent allowlist to carried files, renders the merged
+card and pushes one commit — or nothing, when nothing changed. See
+[where things live](#where-things-live) for local and published file paths.
 
 ## When it publishes
 
@@ -230,6 +236,17 @@ devcard never creates repositories, branches other than `devcard-data`, gists or
 releases.
 
 ## Commands
+
+After `devcard init`, copy its printed snippet to your README. The light/dark
+embed fills the README column and scales down with narrower columns; text and
+spacing stay proportional. See [card sizing](customizing.md#settings).
+
+```html
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/<owner>/<repo>/devcard-data/card-dark.svg">
+  <img alt="devcard" src="https://raw.githubusercontent.com/<owner>/<repo>/devcard-data/card.svg" width="100%">
+</picture>
+```
 
 ```bash
 devcard init                 # checks, capture hook, target repo, first publish, embed snippet

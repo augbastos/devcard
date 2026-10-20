@@ -2,6 +2,16 @@
 
 Two capture modes, counting different things on purpose.
 
+Pick **one** capture mode per machine; running both would count the same lines
+twice. `git` mode hooks git itself rather than the agent, so anything that commits
+through git is covered — Codex, Cursor, aider, Windsurf, a local model, your own
+hands — with no per-tool integration to maintain. To install it in every
+repository in a folder:
+
+```bash
+devcard init --mode git --git-folder <folder>
+```
+
 **`git` mode** reads `git diff --numstat` per commit, so a line is a real net
 change. One caveat: `git commit --amend` fires `post-commit` again, and the
 amended commit's whole diff is read a second time, so an amend-heavy workflow
