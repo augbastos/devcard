@@ -31,6 +31,7 @@ from .svg import (
     iso_date,
     language_bar_hover,
     language_bar_segments,
+    model_slices,
     slice_color,
     slice_label,
     slice_title,
@@ -79,11 +80,19 @@ def render(data, theme="default", lang="en", layout="full", now=0, all_langs=Fal
             cost = None if not costs or any(c is None for c in costs) else sum(map(Decimal, costs), Decimal(0))
         price = "—" if cost is None else f"~${cost:.2f}"
         lines.append(f"{fmt_count(tokens, '.').upper()} tokens · {price} API-equivalent")
-    if not lines:
+    models = (model_slices(data.model_tokens)
+              if data.show_models and "usage" in data.sections and layout in ("full", "wide") else [])
+    if not lines and not models:
         return svg  # Defaults retain the original bytes for every layout.
     root = re.search(r'width="([\d.]+)" height="([\d.]+)" viewBox="0 0 [\d.]+ [\d.]+"', svg)
     width, height = map(float, root.groups())
-    new_height = height + 22 * len(lines)
+    model_svg, model_height = "", 0
+    if models:
+        palette = theme if isinstance(theme, dict) else THEMES[theme_name(theme)]
+        pad = 28 if layout == "wide" or split else 24
+        model_svg, model_height = _model_bar(models, pad, height + 22 * len(lines), width - 2 * pad,
+                                             palette["base"]["mut"])
+    new_height = height + 22 * len(lines) + model_height
     svg = svg[:root.start()] + (f'width="{num(width)}" height="{num(new_height)}" '
                                 f'viewBox="0 0 {num(width)} {num(new_height)}"') + svg[root.end():]
     frame_extra = 14 if split else -1
@@ -95,7 +104,36 @@ def render(data, theme="default", lang="en", layout="full", now=0, all_langs=Fal
         f'{escape_xml(truncate(line, int((width - 48) / 5.5)))}</text>'
         for i, line in enumerate(lines)
     )
-    return svg.replace("</svg>", extra + "</svg>")
+    return svg.replace("</svg>", extra + model_svg + "</svg>")
+
+
+def _model_bar(slices, pad, top, width, neutral):
+    """A thin token-share bar and a short, wrapping family legend."""
+    y, x = top + 5, pad
+    parts = ['<g id="model-bar">',
+             f'<clipPath id="model-clip"><rect x="{num(pad)}" y="{num(y)}" '
+             f'width="{num(width)}" height="6" rx="3"/></clipPath>', '<g clip-path="url(#model-clip)">']
+    labels = []
+    for label, colour, share in slices:
+        text = f"{label} {js_round(share * 100)}%"
+        fill = f'class="mut" fill="{neutral}"' if label == "Other" else f'fill="{colour}"'
+        parts.append(f'<rect x="{to_fixed(x, 2)}" y="{num(y)}" width="{to_fixed(width * share, 2)}" '
+                     f'height="6" {fill}><title>{escape_xml(text)}</title></rect>')
+        x += width * share
+        labels.append(text)
+    parts.append("</g>")
+    rows = [""]
+    for label in labels:
+        candidate = f"{rows[-1]} · {label}" if rows[-1] else label
+        if js_len(candidate) * 5.5 > width and rows[-1]:
+            rows.append(label)
+        else:
+            rows[-1] = candidate
+    for i, row in enumerate(rows):
+        parts.append(f'<text class="mut" x="{num(pad)}" y="{num(top + 26 + i * 16)}" '
+                     f'{SANS} font-size="10">{escape_xml(row)}</text>')
+    parts.append("</g>")
+    return "".join(parts), 36 + (len(rows) - 1) * 16
 
 
 def _render_base(data, theme="default", lang="en", layout="full", now=0, all_langs=False, static=False, split=False):

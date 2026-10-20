@@ -105,7 +105,7 @@ class InitTest(TempDirTest):
     def test_interactive_answers(self):
         with Home(self.tmp, "a"):
             code, out = init(["--remote", self.bare_remote()],
-                             answers=["octo-cat", "", "1", *["n"] * len(config.CONSENT_CATEGORIES), ""])
+                             answers=["octo-cat", "", "1", *["n"] * len(config.CONSENT_CATEGORIES), "", "", ""])
             self.assertEqual(code, 0)
             self.assertEqual(config.load()["repo"], "octo-cat/octo-cat")  # the profile repo default
         self.assertNotIn("published", out)
@@ -116,6 +116,37 @@ class InitTest(TempDirTest):
 
 
 class CommandsTest(TempDirTest):
+    def test_badge_toggles_are_local_independent_and_never_grant_consent(self):
+        with Home(self.tmp, "a"), contextlib.redirect_stdout(io.StringIO()), mock.patch.object(cli, "publish") as send:
+            config.save({**config.DEFAULTS, "badges": [{"label": "manual"}]})
+            self.assertEqual(cli.main(["badges", "--stats"]), 0)
+            self.assertTrue(config.load()["stat_badges"])
+            self.assertFalse(config.load()["milestone_badges"])
+            self.assertEqual(cli.main(["badges", "--milestones", "--no-stats"]), 0)
+            self.assertFalse(config.load()["stat_badges"])
+            self.assertTrue(config.load()["milestone_badges"])
+            self.assertEqual(cli.main(["badges", "--no-milestones"]), 0)
+            self.assertFalse(config.load()["milestone_badges"])
+            self.assertEqual(config.load()["badges"], [{"label": "manual"}])
+            self.assertFalse(any(config.consents(config.load()).values()))
+            send.assert_not_called()
+
+    def test_badges_without_configuration(self):
+        with Home(self.tmp, "a"), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.main(["badges", "--stats"]), 1)
+
+    def test_badges_init_defaults_and_interactive_optins(self):
+        argv = ["--mode", "git", "--user", "octo-cat", "--repo", "octo-cat/cards", "--remote", "local"]
+        with Home(self.tmp, "a"), mock.patch.object(cli, "publish"):
+            init([*argv, "--yes"])
+            self.assertFalse(config.load()["stat_badges"])
+            self.assertFalse(config.load()["milestone_badges"])
+        with Home(self.tmp, "b"), mock.patch.object(cli, "publish"):
+            init([*argv, "--mode", "claude"], answers=[*["n"] * len(config.CONSENT_CATEGORIES), "n", "y", "y"])
+            self.assertTrue(config.load()["stat_badges"])
+            self.assertTrue(config.load()["milestone_badges"])
+            self.assertFalse(any(config.consents(config.load()).values()))
+
     def test_render_command(self):
         out = os.path.join(self.tmp, "out")
         with Home(self.tmp, "a") as home, contextlib.redirect_stdout(io.StringIO()):

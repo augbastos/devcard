@@ -18,6 +18,11 @@
 The serverless card can also show per-language tooltips in a README with an
 opt-in, daily-refreshed language bar. [Set it up →](docs/serverless.md#readme-language-hover)
 
+Optional model-family token shares (`card.show_models`) extend full/wide
+cards with a thin bar and legend, with usage consent. Separate opt-in
+[stat and milestone badges](docs/badges.md) provide light/dark SVGs for README
+embeds. Both badge switches and the model bar default off.
+
 devcard shows **what came out of your coding sessions**. A hook records the edits
 your agent makes — or, for any other tool, each commit — and your machine turns
 that into a card.
@@ -91,7 +96,7 @@ categories, all defaulting to `false`:
 
 Private repositories require the additional `consent.repo_count_private: true`
 opt-in alongside `repo_count`. Local roots of unknown visibility never replace
-the public count. `card.show_agents` and `card.show_usage` control display only;
+the public count. `card.show_agents`, `card.show_usage` and `card.show_models` control display only;
 each line needs both its category consent and its display toggle. A toggle does
 not authorize publication or hide consented JSON from readers.
 

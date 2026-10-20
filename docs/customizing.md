@@ -18,7 +18,9 @@ for the card itself — the SVG is plain template strings.
   "timezone": "",
   "avatar": true,
   "usage": true,
-  "card": {"show_agents": false, "show_usage": false},
+  "card": {"show_agents": false, "show_usage": false, "show_models": false},
+  "stat_badges": false,
+  "milestone_badges": false,
   "badges": [{"kind": "certification", "label": "AWS Cloud Practitioner"}],
   "pins": [{"repo": "my-project", "note": "what it does, in a line"}]
 }
@@ -36,6 +38,9 @@ for the card itself — the SVG is plain template strings.
 | `usage` | Default `true`; `false` skips transcript discovery/scanning. Previously stored aggregates are retained and still published. |
 | `card.show_agents` | Default `false`; show each agent's percentage of recorded lines added and estimated active hours. Concurrent agents are counted independently. |
 | `card.show_usage` | Default `false`; show recorded tokens and an approximate API-equivalent USD estimate. Unknown or partially priced totals show “—”. |
+| `card.show_models` | Default `false`; thin token-share bar and family legend on full/wide cards, including README hover bodies. Requires usage consent and positive tokens. |
+| `stat_badges` | Default `false`; write eligible lines, streak, language and tokens SVG badges. Each needs its category consent. |
+| `milestone_badges` | Default `false`; write eligible lines/streak milestones, polyglot and multi-agent badges. See [badges](badges.md). |
 
 Changes show on the next publish; `devcard publish --force` to see them now.
 
@@ -43,6 +48,19 @@ Both optional lines extend the Python card's height in every layout. With
 both off, output keeps the original golden SVG bytes. They do not change the
 legacy Worker. Usage is published in machine JSON regardless of display flags;
 turning scanning off does not erase previously stored data.
+
+The model bar sums input, output, cache read and cache write tokens, just like
+the usage line. It appears directly below that line when both are enabled,
+or on its own when `show_usage` is off. Families below 1% fold into Other;
+unknown models also appear as Other. Opus, Sonnet and Haiku use terracotta
+shades, GPT and o-series use green, and Other uses the theme's neutral grey.
+Banner, half and vertical layouts skip the model bar and keep their existing
+output. All three display toggles require their matching consent categories;
+none authorizes publication on its own.
+
+`devcard badges --stats/--no-stats --milestones/--no-milestones` controls the
+two independent badge switches locally. The manual `badges` list keeps its
+existing meaning. `devcard render --out DIR` also writes eligible badge SVGs.
 
 ## Changing the card itself
 

@@ -101,11 +101,28 @@ Allowed families are `claude-sonnet`, `claude-opus`, `claude-haiku`, `gpt`, `o`
 and `unknown`. Exact model names and cache-write TTLs stay local. Unrecognized
 model strings are discarded locally and map to `unknown`; they cannot become
 public identifiers. Export rejects invalid enums, dates, counts and costs.
+
+Model recognition uses an exact-spelling table, with no prefix or regular
+expression matching. Current entries include:
+
+| Exact model IDs | Public family |
+|---|---|
+| `claude-opus-5`, `claude-opus-5-5`, `claude-opus-4-8` | `claude-opus` |
+| `claude-sonnet-5`, `claude-sonnet-5-5` | `claude-sonnet` |
+| `claude-haiku-5-5` | `claude-haiku` |
+| `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6-sol`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-6-luna`, `gpt-5.6-luna` | `gpt` |
+
+Existing reviewed spellings remain supported. `claude-fable-5` and
+`claude-fable-5-1` remain unrecognized: their model field is discarded and
+their public family is `unknown` (Other on the model bar). Unreviewed
+suffixes and free-form text are also discarded, even after a rescan.
+
 Tests inspect serialized bytes as well as the local database for private
-sentinels. `devcard publish` includes this projection in the machine JSON only when
-`card.show_usage` is on (default off); machine merges sum matching
-day/agent/family buckets and propagate null costs. The scanner itself does not
-upload anything, and with the line off the usage aggregates never leave the machine.
+sentinels. `devcard publish` includes this projection in the machine JSON only
+with `consent.usage` (default off); machine merges sum matching day/agent/family
+buckets and propagate null costs. `card.show_usage` and `card.show_models`
+control card display, independently of publication consent. The scanner itself
+does not upload anything.
 
 ## How cost is estimated
 
@@ -172,6 +189,22 @@ The package integration discovers `~/.claude/projects/**/*.jsonl`, plus
 `~/.codex/sessions/**/*.jsonl` and `~/.codex/archived_sessions/**/*.jsonl`.
 `CODEX_HOME` overrides the Codex root. Only JSONL transcripts are opened.
 Each file's saved byte cursor avoids parsing unchanged content on reruns.
+The scanner stores a SHA-256 fingerprint of the sorted exact-model table in
+`usage_meta`, plus a fingerprint for each hashed source-file identity. When
+the table changes, or an older database has no fingerprint yet, the next scan
+replays each available source file from the beginning in a new generation.
+Pending files remain eligible for replay when another root or agent is scanned
+later. Once a file has the current fingerprint, normal incremental scanning
+resumes; reordering the table alone does not trigger a replay.
+
+Replay updates previously unknown model families without duplicating recorded
+tokens. It preserves code events, call identities and usage from removed or
+unavailable transcripts; discarded model names can only be recovered from a
+source transcript that is still available. Fingerprints, cursors and usage
+adjustments share the scan's transaction, so a failed replay can be retried.
+Recognizing a family does not supply prices: the new spellings above have no
+bundled rates, so their costs remain `null`, displayed as “—” on the card.
+
 The configured IANA timezone applies to usage buckets; without one, usage
 uses stable UTC buckets (code-activity days still use system-local time).
 Changing the usage timezone requires an explicit local rebuild; a mismatch

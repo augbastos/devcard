@@ -41,6 +41,8 @@ _MODELS = {
     "claude-sonnet-4": "claude-sonnet",
     "claude-sonnet-4-20250514": "claude-sonnet",
     "claude-sonnet-4-6": "claude-sonnet",
+    "claude-sonnet-5": "claude-sonnet",
+    "claude-sonnet-5-5": "claude-sonnet",
     "claude-opus-4": "claude-opus",
     "claude-opus-4-20250514": "claude-opus",
     "claude-opus-4-1": "claude-opus",
@@ -48,12 +50,18 @@ _MODELS = {
     "claude-opus-4-5": "claude-opus",
     "claude-opus-4-5-20251101": "claude-opus",
     "claude-opus-4-6": "claude-opus",
+    "claude-opus-4-8": "claude-opus",
+    "claude-opus-5": "claude-opus",
+    "claude-opus-5-5": "claude-opus",
     "claude-haiku-4-5": "claude-haiku",
     "claude-haiku-4-5-20251001": "claude-haiku",
+    "claude-haiku-5-5": "claude-haiku",
     **dict.fromkeys((
         "gpt-5", "gpt-5-codex", "gpt-5.1", "gpt-5.1-codex",
         "gpt-5.1-codex-max", "gpt-5.2", "gpt-5.2-codex", "gpt-5.3-codex",
         "gpt-5.4", "gpt-6", "gpt-6.1",
+        "gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-sol", "gpt-5.6-terra",
+        "gpt-6-luna", "gpt-5.6-luna",
     ), "gpt"),
     "o3": "o", "o4-mini": "o",
 }
@@ -155,6 +163,17 @@ def _timestamp(value):
 
 def _model(value):
     return value if isinstance(value, str) and value in _MODELS else None
+
+
+def _sync_model_table(conn):
+    """Invalidate per-file model fingerprints; other roots may be scanned later."""
+    encoded = json.dumps(sorted(_MODELS.items()), separators=(",", ":")).encode("utf-8")
+    fingerprint = hashlib.sha256(encoded).hexdigest()
+    stored = conn.execute("SELECT value FROM usage_meta WHERE key='model_table_fingerprint'").fetchone()
+    if stored is None or stored[0] != fingerprint:
+        conn.execute("DELETE FROM usage_meta WHERE key GLOB 'model_file:*'")
+        conn.execute("INSERT OR REPLACE INTO usage_meta VALUES ('model_table_fingerprint', ?)", (fingerprint,))
+    return fingerprint
 
 
 def load_prices(path: Path | None = None) -> PriceTable:
@@ -539,6 +558,17 @@ def _store_call(conn, call, tz, prices):
     old = _rows(conn, "SELECT * FROM usage_calls WHERE call_key=?", (call.key,))
     if old and call.agent == "codex":
         # Response ids and stable snapshot transition keys are global first-wins.
+        # A reviewed spelling can resolve previously discarded attribution;
+        # preserve the original counts, reconciliation, dates and price provenance.
+        row = old[0]
+        if (call.model is not None and row["model"] in (None, call.model)
+                and (row["model"] != call.model or row["model_family"] != call.model_family)):
+            _adjust_bucket(conn, row, -1)
+            row.update(model=call.model, model_family=call.model_family)
+            conn.execute("UPDATE usage_calls SET model=?, model_family=? WHERE call_key=?",
+                         (row["model"], row["model_family"], call.key))
+            _adjust_bucket(conn, row, 1)
+            return True
         return False
     if call.kind == "snapshot":
         # A wholly replaced snapshot keeps a numeric tombstone so a rotated
@@ -554,7 +584,7 @@ def _store_call(conn, call, tz, prices):
     if old and revised_at < old[0]["revised_at"]:
         return False
     if old:
-        logical = ("model", *TOKEN_FIELDS, "cache_write_5m_tokens", "cache_write_1h_tokens", "kind")
+        logical = ("model", "model_family", *TOKEN_FIELDS, "cache_write_5m_tokens", "cache_write_1h_tokens", "kind")
         if all(getattr(call, name) == old[0][name] for name in logical):
             # Reimporting an identical observation must not undo an explicit
             # reprice or silently apply a newly replaced bundled table.
@@ -649,6 +679,7 @@ def scan_usage(paths: Iterable[Path], conn: sqlite3.Connection, *, agent: str,
 
     Savepoints preserve any caller-owned transaction. Replacing the bundled
     table does not silently reprice existing calls; use reprice_usage explicitly.
+    A changed exact-model table replays available files in a new generation.
     """
     if agent not in AGENTS:
         raise ValueError("unsupported_agent")
@@ -663,6 +694,7 @@ def scan_usage(paths: Iterable[Path], conn: sqlite3.Connection, *, agent: str,
         conn.execute("INSERT OR IGNORE INTO usage_meta VALUES ('timezone', ?)", (zone,))
         if conn.execute("SELECT value FROM usage_meta WHERE key='timezone'").fetchone()[0] != zone:
             raise ValueError("usage_timezone_changed")
+        model_fingerprint = _sync_model_table(conn)
         salt = bytes.fromhex(conn.execute("SELECT value FROM usage_meta WHERE key='salt'").fetchone()[0])
         for path in sorted(set(Path(path).resolve() for path in paths)):
             # Filenames are local and explicit; .env and non-transcripts are never opened.
@@ -681,6 +713,9 @@ def scan_usage(paths: Iterable[Path], conn: sqlite3.Connection, *, agent: str,
             old = stored[0] if stored else None
             if old and old["agent"] != agent:
                 raise ValueError("source_agent_changed")
+            model_key = "model_file:" + file_key
+            stored_model = conn.execute("SELECT value FROM usage_meta WHERE key=?", (model_key,)).fetchone()
+            model_rescan = old and (stored_model is None or stored_model[0] != model_fingerprint)
             generation = old["generation"] if old else 0
             offset = old["offset"] if old else 0
             prefix, boundary = _fingerprints(path, min(offset, stat.st_size))
@@ -689,19 +724,21 @@ def scan_usage(paths: Iterable[Path], conn: sqlite3.Connection, *, agent: str,
                 or prefix != old["prefix_hash"] or boundary != old["boundary_hash"]
                 or (stat.st_size == offset and stat.st_mtime_ns != old["mtime_ns"])
             )
-            if rotated:
+            if rotated or model_rescan:
                 generation += 1
                 offset = 0
-                report.note("source_generation_changed")
+                if rotated:
+                    report.note("source_generation_changed")
                 conn.execute("DELETE FROM usage_file_responses WHERE file_key=?", (file_key,))
-            state = CodexState.restore(salt, file_key, old["state"] if old and not rotated else None)
-            if rotated and agent == "codex":
+            state = CodexState.restore(salt, file_key, old["state"] if old and not (rotated or model_rescan) else None)
+            if (rotated or model_rescan) and agent == "codex":
                 # Rotation can leave a segment without its original session
                 # header. Retain only the previously verified hashed identity,
                 # not counters or model attribution. A new explicit header
-                # replaces it; an omitted header leaves the baseline untrusted.
+                # replaces it; rotation without a header leaves an untrusted
+                # baseline. Model-only replay retains the prior accounting below.
                 state.session_key = json.loads(old["state"]).get("session_key")
-                state.untrusted_baseline = True
+                state.untrusted_baseline = bool(rotated)
             state.seen_responses = {row[0] for row in conn.execute(
                 "SELECT call_key FROM usage_file_responses WHERE file_key=? AND generation=?", (file_key, generation))}
             report.files += 1
@@ -731,7 +768,14 @@ def scan_usage(paths: Iterable[Path], conn: sqlite3.Connection, *, agent: str,
                                 _reconcile_snapshot(conn, snapshot_key, response_key, vector, prices)
                             state.snapshot_adjustments.clear()
                         if call:
-                            report.calls_updated += int(_store_call(conn, call, tz, prices))
+                            # Model-only replay can resolve a headerless baseline
+                            # previously verified with last_token_usage. It must
+                            # not newly count a prefix rejected after rotation.
+                            replayed_codex = (agent == "codex" and model_rescan and not rotated
+                                              and located.end <= old["offset"])
+                            if not replayed_codex or conn.execute(
+                                    "SELECT 1 FROM usage_calls WHERE call_key=?", (call.key,)).fetchone():
+                                report.calls_updated += int(_store_call(conn, call, tz, prices))
                             if agent == "codex" and call.kind == "response":
                                 conn.execute("INSERT OR IGNORE INTO usage_file_responses VALUES (?, ?, ?)",
                                              (file_key, generation, call.key))
@@ -753,6 +797,7 @@ def scan_usage(paths: Iterable[Path], conn: sqlite3.Connection, *, agent: str,
             conn.execute("INSERT OR REPLACE INTO usage_files VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                          (file_key, agent, generation, offset, signature, prefix, boundary,
                           stat.st_mtime_ns, state.dump()))
+            conn.execute("INSERT OR REPLACE INTO usage_meta VALUES (?, ?)", (model_key, model_fingerprint))
         # A no-op rerun must not hide an earlier structural accounting gap.
         report.incomplete = report.incomplete or conn.execute(
             "SELECT 1 FROM usage_diagnostics LIMIT 1").fetchone() is not None

@@ -19,6 +19,32 @@ LANGUAGE_COLORS = {
     "Ruby": "#701516", "PHP": "#4f5d95",
 }
 NEUTRAL_LANGUAGE_COLOR = "#8b93a3"
+MODEL_COLORS = {
+    "claude-opus": ("Opus", "#C15F3C"),
+    "claude-sonnet": ("Sonnet", "#D97757"),
+    "claude-haiku": ("Haiku", "#E9A27F"),
+    "gpt": ("GPT", "#10A37F"),
+    "o": ("o-series", "#0B7A5F"),
+}
+
+
+def model_slices(model_tokens: dict[str, int]) -> list[tuple[str, str, float]]:
+    """Token shares, with unknown and sub-one-percent families folded together."""
+    total = sum(value for value in model_tokens.values() if value > 0)
+    if not total:
+        return []
+    slices, other = [], 0
+    for family, tokens in model_tokens.items():
+        if tokens <= 0:
+            continue
+        if family not in MODEL_COLORS or tokens * 100 < total:
+            other += tokens
+        else:
+            label, colour = MODEL_COLORS[family]
+            slices.append((label, colour, tokens / total))
+    if other:
+        slices.append(("Other", NEUTRAL_LANGUAGE_COLOR, other / total))
+    return sorted(slices, key=lambda s: (-s[2], s[0]))
 
 KIND_ICONS = {
     "badge": "M0,-6 L1.8,-1.9 6,-1.9 2.7,0.9 3.7,5 0,2.4 -3.7,5 -2.7,0.9 -6,-1.9 -1.8,-1.9 Z",

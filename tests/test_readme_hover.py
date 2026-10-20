@@ -407,7 +407,7 @@ class HoverCommandTest(TempDirTest):
                 self.assertEqual(config.load()["readme_hover"], enabled)
         with Home(self.tmp, "b"), mock.patch.object(cli, "publish"):
             init(["--mode", "claude", "--user", "octo-cat", "--repo", "octo-cat/cards", "--remote", "local"],
-                 answers=[*["n"] * len(config.CONSENT_CATEGORIES), "y"])
+                 answers=[*["n"] * len(config.CONSENT_CATEGORIES), "y", "n", "n"])
             self.assertTrue(config.load()["readme_hover"])
 
 

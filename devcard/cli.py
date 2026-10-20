@@ -188,6 +188,11 @@ class Init:
         cfg["readme_hover"] = self.args.readme_hover
         if not self.args.readme_hover and not self.args.yes:
             cfg["readme_hover"] = self.ask("  Enable language hover in your README (daily commit)? [y/N]: ").lower() in ("y", "yes")
+        for key, question in (("stat_badges", "Enable stat badge files?"),
+                              ("milestone_badges", "Enable milestone badge files?")):
+            cfg[key] = False
+            if not self.args.yes:
+                cfg[key] = self.ask(f"  {question} [y/N]: ").lower() in ("y", "yes")
 
         self.out("\n[4/5] Saving settings")
         cfg.update({"github_user": user, "repo": repo})
@@ -318,6 +323,24 @@ def cmd_readme(args):
     return 0
 
 
+def cmd_badges(args):
+    cfg = config.load()
+    if cfg is None:
+        print("not configured — run `devcard init`")
+        return 1
+    changed = False
+    for option, key, label in ((args.stats, "stat_badges", "Stat badges"),
+                               (args.milestones, "milestone_badges", "Milestone badges")):
+        if option is not None:
+            cfg[key] = option
+            changed = True
+        print(f"{label}: {'enabled' if cfg.get(key) is True else 'disabled'}")
+    if changed:
+        config.save(cfg)
+    print("Requires each badge's publication consent. Files update on the next publish.")
+    return 0
+
+
 def _consent_list(value):
     categories = value.split(",")
     if any(key not in config.CONSENT_CATEGORIES for key in categories):
@@ -423,6 +446,13 @@ def build_parser():
     group.add_argument("--enable", action="store_true")
     group.add_argument("--disable", action="store_true")
     p.set_defaults(func=cmd_readme)
+
+    p = sub.add_parser("badges", help="show or enable/disable stat and milestone badge files")
+    p.add_argument("--stats", action=argparse.BooleanOptionalAction, default=None,
+                   help="enable stat badges (requires each category's consent)")
+    p.add_argument("--milestones", action=argparse.BooleanOptionalAction, default=None,
+                   help="enable milestone badges (requires each category's consent)")
+    p.set_defaults(func=cmd_badges)
 
     p = sub.add_parser("unpublish", help="disable publication and delete the verified devcard-owned branch")
     p.set_defaults(func=cmd_unpublish)
