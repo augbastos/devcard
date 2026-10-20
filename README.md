@@ -62,9 +62,14 @@ and prints the snippet for your README:
 ```html
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/<owner>/<repo>/devcard-data/card-dark.svg">
-  <img alt="devcard" src="https://raw.githubusercontent.com/<owner>/<repo>/devcard-data/card.svg">
+  <img alt="devcard" src="https://raw.githubusercontent.com/<owner>/<repo>/devcard-data/card.svg" width="100%">
 </picture>
 ```
+
+The snippet fills the README column. The default `full` and `wide` layouts
+use a 712px canvas: at an 830px display width, content is about 1.17× its
+design size (the same scale as the former 480px card displayed at 560px).
+The card scales down with narrower columns; its text and spacing stay proportional.
 
 For per-language tooltips, run `devcard readme --enable` and wrap your card in
 `<!-- devcard:start -->` and `<!-- devcard:end -->` markers in `README.md` on the

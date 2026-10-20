@@ -28,7 +28,7 @@ for the card itself — the SVG is plain template strings.
 
 | Key | Values |
 |---|---|
-| `layout` | `full` (480 wide), `wide` (840), `banner` (480×72), `half` (480×152), `vertical` (280) |
+| `layout` | `full` (712 wide), `wide` (712, larger heatmap and side-by-side pins), `banner` (480×72), `half` (480×152), `vertical` (280) |
 | `theme` | `default` (published as its light and dark halves), `dark`, `light`, `gentle`, `cyberpunk`, `terminal` |
 | `lang` | `en`, `pt`, `es` |
 | `timezone` | An IANA zone such as `Europe/Dublin`; empty means this machine's local time |
@@ -44,8 +44,16 @@ for the card itself — the SVG is plain template strings.
 
 Changes show on the next publish; `devcard publish --force` to see them now.
 
+The README snippet uses `width="100%"` to fill its column. Both `full` and
+`wide` have a 712px intrinsic canvas, including partial-consent cards and README
+hover bodies. At an 830px display width the scale is 830/712 ≈ 1.166×, matching
+the former 480px card at 560px. At 880px it is 1.236×; at 400px it is 0.562×.
+Font sizes and element heights in the SVG retain their design sizes; the extra
+horizontal room in `full` holds three legend columns and spreads the footer stats.
+The legacy Worker retains its original geometry.
+
 Both optional lines extend the Python card's height in every layout. With
-both off, output keeps the original golden SVG bytes. They do not change the
+both off, output matches the current base-card goldens. They do not change the
 legacy Worker. Usage is published in machine JSON regardless of display flags;
 turning scanning off does not erase previously stored data.
 
@@ -72,10 +80,11 @@ existing meaning. `devcard render --out DIR` also writes eligible badge SVGs.
 | Language colours | `LANGUAGE_COLORS` in `devcard/svg.py` |
 | Strings and locales | `devcard/strings.py` — a locale is a few lines, plus its month names |
 
-The Python renderer is held byte for byte to golden files made by the legacy
-Worker's renderer (`tests/golden/`), so a deliberate change to the look is made
-in both, or the golden files are regenerated from the Worker and the difference
-documented. See [development](development.md#golden-files).
+The Python renderer is checked against golden files in `tests/golden/`.
+Compact layouts share the legacy Worker's references; the Python `full` and
+`wide` README canvases have their own references under `tests/golden/readme/`.
+Regenerate the relevant files deliberately after changing the renderer, and
+document the difference. See [development](development.md#golden-files).
 
 ## The legacy Worker
 

@@ -115,6 +115,6 @@ def embed_html(repo, alt="devcard"):
     return (
         "<picture>\n"
         f'  <source media="(prefers-color-scheme: dark)" srcset="{raw_url(repo, "card-dark.svg")}">\n'
-        f'  <img alt="{alt}" src="{raw_url(repo, "card.svg")}">\n'
+        f'  <img alt="{alt}" src="{raw_url(repo, "card.svg")}" width="100%">\n'
         "</picture>"
     )

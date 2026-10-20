@@ -1,10 +1,12 @@
-"""The Python renderer against the TypeScript renderer's golden SVGs.
+"""The Python renderer against deliberately generated golden SVGs.
 
 worker/test/golden.test.ts sends each fixture's events through the Worker's real
 /ingest, renders every listed variant through /svg with the clock pinned, and
 writes tests/golden/. This test puts the same events into a real hook database
 (hook/devcard_lib.init_db), builds the rollups with devcard.data, renders with
-devcard.render, and compares. Whitespace is normalised; nothing else is.
+devcard.render, and compares. Full/wide now use Python-generated readme/ goldens;
+the original Worker references remain untouched for its historical geometry.
+Whitespace is normalised; nothing else is.
 """
 import json
 import os
@@ -22,6 +24,11 @@ with open(os.path.join(GOLDEN_DIR, "fixtures.json"), encoding="utf-8") as _f:
 
 def golden_name(v):
     return f"{v['fixture']}/{v['layout']}-{v['theme']}-{v['lang']}{'-all' if v.get('langs') == 'all' else ''}.svg"
+
+
+def python_golden_name(v):
+    name = golden_name(v)
+    return f"readme/{name}" if v["layout"] in ("full", "wide") else name
 
 
 def normalise(svg):
@@ -60,12 +67,12 @@ def card_for(name, locale, agg):
 
 
 class GoldenTest(unittest.TestCase):
-    def test_every_variant_matches_the_typescript_renderer(self):
+    def test_every_variant_matches_its_renderer_reference(self):
         self.assertGreater(len(GOLDEN["variants"]), 40)
         with tempfile.TemporaryDirectory() as tmp:
             aggs = {name: aggregate_for(name, tmp) for name in GOLDEN["fixtures"]}
             for v in GOLDEN["variants"]:
-                name = golden_name(v)
+                name = python_golden_name(v)
                 with self.subTest(name):
                     card = card_for(v["fixture"], v["lang"], aggs[v["fixture"]])
                     got = render.render(card, v["theme"], v["lang"], v["layout"], now=GOLDEN["now"],
