@@ -11,10 +11,10 @@
 </p>
 
 <!-- devcard:start -->
-<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/augbastos/devcard/devcard-data/card-dark.svg"><img src="https://raw.githubusercontent.com/augbastos/devcard/devcard-data/card.svg" width="100%" alt="devcard — augbastos's coding stats, published from the devcard-data branch"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/augbastos/augbastos/devcard-data/card-dark.svg"><img src="https://raw.githubusercontent.com/augbastos/augbastos/devcard-data/card.svg" width="100%" alt="devcard — augbastos's coding stats, published from the devcard-data branch"></picture>
 <!-- devcard:end -->
 
-<p align="center"><em>↑ The maintainer's card, published by <code>devcard publish</code> to this repository's <code>devcard-data</code> branch.</em></p>
+<p align="center"><em>↑ The maintainer's card, published by <code>devcard publish</code> to the <code>devcard-data</code> branch of the maintainer's profile repository.</em></p>
 The serverless card can also show per-language tooltips in a README with an
 opt-in, daily-refreshed language bar. [Set it up →](docs/serverless.md#readme-language-hover)
 

@@ -45,7 +45,7 @@ export default {
       return new Response(null, {
         status: 301,
         headers: {
-          Location: `https://raw.githubusercontent.com/augbastos/devcard/devcard-data/${file}`,
+          Location: `https://raw.githubusercontent.com/augbastos/augbastos/devcard-data/${file}`,
           "Cache-Control": "public, max-age=3600",
         },
       });
