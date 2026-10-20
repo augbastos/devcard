@@ -41,7 +41,7 @@ AVATAR_FAILURE_TTL = 3600
 AVATAR_MAX_BYTES = 256 * 1024
 BRANCH_MARKER = b'{"format": 1}\n'
 MACHINE_PATH_RE = re.compile(r"machines/[A-Za-z0-9_-]{1,64}\.json\Z")
-SLICE_PATH_RE = re.compile(r"lang/(?:[0-9]+|cap-left|cap-right)(?:-dark)?\.svg\Z")
+SLICE_PATH_RE = re.compile(r"lang/(?:[0-9]+|cap-left|cap-right|body)(?:-dark)?\.svg\Z")
 README_INTERVAL = 86400
 
 # What git exports to a hook so that commands find *that* repository
@@ -399,8 +399,12 @@ def render_files(cfg, aggregates, now, avatar=None):
         "card.svg": render(card, light, cfg["lang"], cfg["layout"], now=now, static=True).encode("utf-8"),
         "card-dark.svg": render(card, dark, cfg["lang"], cfg["layout"], now=now, static=True).encode("utf-8"),
     }
-    if readme.enabled(cfg):
+    if readme.enabled(cfg) and readme.split_supported(card, cfg["layout"]):
         files.update(readme.slice_files(card, light, dark))
+        for suffix, theme in (("", light), ("-dark", dark)):
+            files[f"lang/body{suffix}.svg"] = render(
+                card, theme, cfg["lang"], cfg["layout"], now=now, static=True, split=True,
+            ).encode("utf-8")
     return files
 
 
@@ -472,7 +476,7 @@ def refresh_readme(repo, cfg, aggregates, now, state):
 
 
 def _refresh_readme(repo, cfg, aggregates, now, state, target):
-    block = readme.build_block(cfg["repo"], _card_data(cfg, aggregates, now), cfg["lang"])
+    block = readme.build_block(cfg["repo"], _card_data(cfg, aggregates, now), cfg["lang"], cfg["layout"])
     default = repo.default_head()
     try:
         raw = repo.readme_blob(default[1]) if default else None

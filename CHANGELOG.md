@@ -15,6 +15,12 @@ What "public API" means for devcard, since it is not a library:
 
 ## [Unreleased]
 
+### Fixed
+
+- README hover block renders as one card: a light/dark body without the
+  language bar or bottom edge joins directly to the hover strip in `full`
+  and `wide`. Other layouts retain the normal single-image embed.
+
 ### Added
 
 - Opt-in serverless README language hover (`readme_hover`, default off), asked

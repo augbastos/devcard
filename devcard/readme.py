@@ -6,13 +6,14 @@ their percentage widths and labels must be refreshed along with the data.
 from . import config
 from .data import with_other_bucket
 from .jsfmt import js_round, num, to_fixed
+from .render import WIDE_PAD, WIDE_W, split_supported
 from .strings import STRINGS, lang_name
 from .svg import escape_xml, slice_color, slice_title
 
 START = "<!-- devcard:start -->"
 END = "<!-- devcard:end -->"
-WIDTH = 840
-PAD = 28
+WIDTH = WIDE_W
+PAD = WIDE_PAD
 INNER = WIDTH - 2 * PAD
 STRIP_HEIGHT = 34
 BAR_HEIGHT = 14
@@ -83,25 +84,31 @@ def slice_files(card, light, dark):
     return files
 
 
-def _picture(repo, name, units, title=""):
+def _picture(repo, name, units, title="", alt=""):
     light = escape_xml(config.raw_url(repo, f"lang/{name}.svg"))
     dark = escape_xml(config.raw_url(repo, f"lang/{name}-dark.svg"))
     title_attr = f' title="{escape_xml(title)}"' if title else ""
     return ('<picture><source media="(prefers-color-scheme: dark)" '
             f'srcset="{dark}"><img src="{light}" width="{num(units / 10000)}%" '
-            f'align="top"{title_attr} alt="{escape_xml(title)}"></picture>')
+            f'align="top"{title_attr} alt="{escape_xml(alt or title)}"></picture>')
 
 
-def build_block(repo, card, lang="en"):
-    """Full card plus one gap-free row of themed images with per-slice titles."""
+def build_block(repo, card, lang="en", layout="full"):
+    """One visual card: a flat-bottom body followed by its gap-free strip.
+
+    Other layouts and cards without languages retain the single-image embed.
+    """
+    if not split_supported(card, layout):
+        return config.embed_html(repo)
     left, slots, right = strip_layout(card)
     other = STRINGS[lang_name(lang)]["other"]
-    pieces = [_picture(repo, "cap-left", left)]
+    pieces = [_picture(repo, "body", PERCENT_UNITS, alt=f"devcard — {card.github_user}'s coding stats"),
+              _picture(repo, "cap-left", left)]
     for i, (s, units, share) in enumerate(slots):
         title = f"{slice_title(s, other)} {to_fixed(share * 100, 1)}%"
         pieces.append(_picture(repo, str(i), units, title))
     pieces.append(_picture(repo, "cap-right", right))
-    return config.embed_html(repo) + "\n<p>" + "".join(pieces) + "</p>"
+    return "<p>" + "".join(pieces) + "</p>"
 
 
 def replace_block(readme, block):

@@ -77,6 +77,7 @@ On the branch `devcard-data` of the repository you chose:
 | Path | What |
 |---|---|
 | `card.svg`, `card-dark.svg` | The card, merged across every machine, for light and dark GitHub themes |
+| `lang/body.svg`, `lang/body-dark.svg` | Optional README body, without the language bar or bottom edge |
 | `lang/<n>.svg`, `lang/<n>-dark.svg`, `lang/cap-*.svg` | Optional language-hover slices and end caps, with light/dark variants |
 | `machines/<id>.json` | One file per machine; denied categories are also removed from carried files |
 | `README.md` | A note that the branch is generated |
@@ -105,18 +106,32 @@ Your existing card snippet goes here.
 <!-- devcard:end -->
 ```
 
-On publish, devcard commits small SVGs alongside the full card on `devcard-data`.
+On publish, devcard commits body and strip SVGs alongside the full card on `devcard-data`.
 It uses the card legend's language/Other grouping, colours and slice titles.
-The README block contains the full card `<picture>` followed by a row of
-adjacent per-language `<picture>` elements, each with a dark source and an
+The README block forms one visual card in a single `<p>`: a body `<picture>`
+at `width="100%"`, then the left cap, per-language slices and right cap. The
+body omits the language bar and closes the space it occupied, keeping the
+legend, heatmap and footer. Its rounded frame extends below the viewBox, so
+the bottom is flat, with no bottom border or corners. The strip supplies the
+bar, surrounding space, bottom border and rounded bottom corners. Body and
+strip share an 840px canvas, 28px padding, background, border and corner radius.
+Every image uses `align="top"`, with no whitespace between adjacent tags;
+the strip is last so paragraph line-box slack falls below the card.
+Each `<picture>` has a dark source; slices carry an
 `<img title="Python 41.8%">`. URLs point to `raw.githubusercontent.com` on
 `devcard-data`; no Worker is involved. A browser cannot hover inside a single
 SVG embedded as an image, so each tooltip needs its own image.
 
+The split supports `full` (the default) and `wide`, including partial-consent
+cards that have a language section. Other layouts, or cards without that
+section, use the normal single-image embed without per-language tooltips and
+do not generate hover files. The normal `card.svg` and `card-dark.svg` embeds
+keep their existing layouts and language bars unchanged.
+
 Widths use the legacy Worker's layout: narrow segments get a four-pixel target
 at the nominal 840-pixel card width, paid for from larger segments. Titles keep
 the true shares. Integer percentage units and end caps make the row total
-exactly 100%, without spaces between images. Old slice files disappear from
+exactly 100%, without spaces between images. Old body and slice files disappear from
 the generated tree when the number of slices shrinks, hover is disabled or
 languages consent is revoked.
 

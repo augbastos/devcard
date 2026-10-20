@@ -101,9 +101,17 @@ class BranchGuardTest(TempDirTest):
         self.attempt([".devcard", "card.svg", "card-dark.svg", "important.txt"])
 
     def test_foreign_language_files_never_reach_a_write(self):
-        for name in ("lang/evil.svg", "lang/sub/0.svg"):
+        for name in ("lang/evil.svg", "lang/sub/0.svg", "lang/body-light.svg", "lang/body-dark-dark.svg",
+                     "lang/body.svg.bak", "lang/body.svg\n", "lang/body0.svg", "lang/sub/body.svg"):
             with self.subTest(name=name):
                 self.attempt([".devcard", "card.svg", "card-dark.svg", name])
+
+    def test_ownership_allows_only_exact_body_and_slice_names(self):
+        names = ["lang/body.svg", "lang/body-dark.svg", "lang/0.svg", "lang/12-dark.svg",
+                 "lang/cap-left.svg", "lang/cap-right-dark.svg"]
+        for name in names:
+            with self.subTest(name=name):
+                self.assertIsNotNone(publish.SLICE_PATH_RE.fullmatch(name))
 
     def test_default_branch_never_reaches_a_write(self):
         self.attempt([".devcard", "card.svg", "card-dark.svg"], default=True)
@@ -145,6 +153,12 @@ class PublishTest(TempDirTest):
 
     def owned_files(self):
         return {".devcard": b'{"format": 1}\n', "card.svg": b"<svg/>", "card-dark.svg": b"<svg/>"}
+
+    def test_accepts_owned_body_files_and_removes_them_when_hover_is_disabled(self):
+        self.seed({**self.owned_files(), "lang/body.svg": b"<svg/>", "lang/body-dark.svg": b"<svg/>"})
+        with Home(self.tmp, "a"):
+            self.assertEqual(run(cfg_for(self.remote), force=True), "published")
+        self.assertNotIn("lang/body.svg", self.tree())
 
     def test_refuses_an_unmarked_existing_branch(self):
         head = self.seed({"card.svg": b"someone else's card"})
