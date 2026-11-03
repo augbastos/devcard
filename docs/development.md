@@ -74,9 +74,8 @@ mirrors stop matching them.
 | `security` | `secrets` | Gitleaks over the whole history. |
 | `security` | `dependencies` | Dependency review: a pull request adding a known-vulnerable package fails. |
 | `security` | `codeql` | CodeQL for TypeScript, Python and the workflow files. |
-| `scpe` / `scpe-seal` | `verify` | Fails a pull request that does not disclose AI use (Dependabot excepted); `scpe-seal` comments with the reason. Says nothing about whether the code works. |
 
-The required checks on `main` are `ci-ok`, `secrets`, `dependencies` and `verify`.
+The workflows define `ci-ok`, `secrets` and `dependencies` as required checks.
 
 How the workflows are kept safe:
 
@@ -87,9 +86,7 @@ How the workflows are kept safe:
 - nothing from a pull request is interpolated into a shell script — values reach
   `run:` through environment variables;
 - no job holding a write token runs contributor code: `codeql` checks it out
-  only to analyse it, without building (`build-mode: none`), and `scpe-seal`
-  never checks it out — it validates the pull request number from the artifact
-  and posts SCPE's rendered comment as-is.
+  only to analyse it, without building (`build-mode: none`).
 
 ## The README card block
 
