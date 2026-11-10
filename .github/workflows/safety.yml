@@ -27,6 +27,8 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 1
+          # The PR's code is scanned, never run; keep the token out of its git config.
+          persist-credentials: false
 
       - name: No secret introduced by this PR
         env:

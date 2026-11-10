@@ -491,7 +491,7 @@ class GitIsolationTest(TempDirTest):
         hook = os.path.join(hooks, "pre-push")
         with open(hook, "w", encoding="utf-8", newline="\n") as f:
             f.write(f'#!/bin/sh\nprintf invoked > "{sentinel}"\nexit 1\n')
-        os.chmod(hook, 0o755)
+        os.chmod(hook, 0o700)  # executable for the owner only; enough for git to run it
         global_config = os.path.join(self.tmp, ".gitconfig")
         system_config = os.path.join(self.tmp, "system.gitconfig")
         with open(global_config, "w", encoding="utf-8") as f:
