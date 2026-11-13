@@ -171,8 +171,8 @@ Version floors live in two places: `MIN_PYTHON` in `install.py` and
 
 ## Repository rules
 
-- `main` is protected: pull request, squash merge, required checks (`ci-ok`,
-  `secrets`, `dependencies`). No direct pushes, no force pushes.
+- `main` is protected: pull request, squash merge, required checks (`Safety`,
+  `CI passed`). No direct pushes, no force pushes.
 - Every pull request carries an AI-use disclosure: tick a box in the template or add
   an `Assisted-by:` trailer.
 - Actions are pinned by commit SHA with the version in a comment; keep it that way.

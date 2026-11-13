@@ -105,12 +105,12 @@ jobs:
 
   dependencies:
     name: Dependency review
-    # Dependency review compares pull requests against their base revision.
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+      # Dependency review compares pull requests against their base revision.
+      - if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: moderate
 
@@ -268,5 +268,5 @@ jobs:
         run: |
           jq -e --arg event "$EVENT_NAME" '
             to_entries | all(.value.result == "success" or
-              ((.key == "safety" or .key == "dependencies") and .value.result == "skipped" and $event != "pull_request"))
+              (.key == "safety" and .value.result == "skipped" and $event != "pull_request"))
           ' <<< "$NEEDS_JSON"
