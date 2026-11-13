@@ -19,17 +19,17 @@ on:
 permissions:
   contents: read
 
-# A new push supersedes the run in flight for the same ref.
+# Superseded pull requests stop; main runs always finish.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   hook:
     name: hook (${{ matrix.os }}, python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}-latest
-    # A runaway guard, not a budget: the suite takes well under a minute.
-    timeout-minutes: 15
+    # About twice the recent slowest Windows job; Linux finishes much sooner.
+    timeout-minutes: 9
     strategy:
       fail-fast: false
       matrix:
@@ -48,6 +48,8 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: .github/requirements-ci.txt
 
       - name: Identify git to the integration tests
         # The suite builds throwaway repositories and commits into them; git
@@ -57,25 +59,24 @@ jobs:
           git config --global user.name "devcard ci"
           git config --global init.defaultBranch main
 
-      - name: Run the hook and installer test suites
-        run: python -m unittest discover -s hook -p "test_*.py" -v
-
       - name: Give Windows an IANA time-zone database
         # Windows ships none, and the golden tests render in Asia/Tokyo.
         # pyproject.toml declares the same dependency for a pipx install.
         if: runner.os == 'Windows'
-        run: python -m pip install tzdata==2025.2
+        run: python -m pip install -r .github/requirements-ci.txt
 
-      - name: Run the devcard package test suite
+      - name: Run the hook, installer and devcard package test suites
         # The Python renderer against the golden SVGs, render/publish against
         # temporary local bare repositories, `devcard init`, and a git hook
         # process publishing on its own. No network.
-        run: python -m unittest discover -s tests -t . -v
+        # Each module gets a process: mocks, temporary repositories/databases
+        # and ephemeral HTTP ports stay isolated. No extra matrix jobs.
+        run: python scripts/run_tests.py
 
   python-lint:
     name: python lint
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -88,7 +89,9 @@ jobs:
   package:
     name: package (pipx install)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 2
+    env:
+      PIP_CONSTRAINT: ${{ github.workspace }}/.github/requirements-ci.txt
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -97,6 +100,8 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: .github/requirements-ci.txt
 
       - name: Install from the checkout as a user would from GitHub
         # pipx ships on the hosted runner. `pipx install git+https://...` builds
@@ -121,7 +126,7 @@ jobs:
   worker:
     name: worker (node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 2
     strategy:
       fail-fast: false
       matrix:
