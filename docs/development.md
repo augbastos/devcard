@@ -24,7 +24,7 @@ repositories and databases are independent, HTTP tests use ephemeral ports,
 and process-local mocks cannot leak into another module. The runner prints
 per-module elapsed time and fails if any module fails or cannot start. Use
 `python scripts/run_tests.py --jobs 1` for a sequential timing comparison.
-The OS/runtime matrix and the `ci-ok` aggregate stay unchanged. Dependency
+The OS/runtime matrix stays unchanged; `CI passed` aggregates all CI jobs. Dependency
 caches use the pinned CI requirements and the Worker's npm lockfile; only
 superseded pull-request runs are cancelled.
 
@@ -75,18 +75,28 @@ mirrors stop matching them.
 
 ## What CI checks
 
-| Workflow | Job | Why it exists |
+| Workflow | Check | Why it exists |
 |---|---|---|
-| `ci` | `hook` | The hook, installer and `devcard` package suites on Ubuntu **and Windows**, Python 3.11 and 3.14. Windows differs for real: process detaching, drive-letter paths, ACLs instead of mode bits. |
-| `ci` | `package` | `pipx install .`, then `devcard --version`, a render, and an import of every hook module the way the hooks run (`python -S`). |
-| `ci` | `python lint` | Ruff's correctness rules and bugbear. |
-| `ci` | `worker` | `npm ci`, typecheck, the workerd suite, and a `wrangler deploy --dry-run` bundle, on Node 22 and 24. |
-| `ci` | `ci-ok` | The single check the ruleset requires from this workflow, so a matrix change never leaves a required check that no job reports. |
-| `security` | `secrets` | Gitleaks over the whole history. |
-| `security` | `dependencies` | Dependency review: a pull request adding a known-vulnerable package fails. |
-| `security` | `codeql` | CodeQL for TypeScript, Python and the workflow files. |
+| `CI` | `Safety` | Scans PR commits and checks critical paths using the base revision's policy. |
+| `CI` | `Hooks (Ubuntu, Python 3.11)`, `Hooks (Ubuntu, Python 3.14)`, `Hooks (Windows, Python 3.11)`, `Hooks (Windows, Python 3.14)` | Hook, installer and package suites across the supported matrix. |
+| `CI` | `Package (pipx)` | Installs the package, renders a card and imports the hook modules with `python -S`. |
+| `CI` | `Lint` | Ruff correctness rules and bugbear. |
+| `CI` | `Worker (Node 22)`, `Worker (Node 24)` | Locked install, typecheck, workerd tests and a dry-run bundle. |
+| `CI` | `Secrets scan` | Gitleaks over the whole history. |
+| `CI` | `Dependency review` | Rejects PR dependencies with known vulnerabilities of moderate severity or higher. |
+| `CI` | `CI passed` | Requires every CI job to succeed. Only Safety and Dependency review may skip outside pull requests. |
+| `CodeQL` | `codeql (actions)`, `codeql (javascript-typescript)`, `codeql (python)` | Static analysis, kept in a separate workflow. |
 
-The workflows define `ci-ok`, `secrets` and `dependencies` as required checks.
+Configure required checks as **`Safety` and `CI passed`** after the new checks
+exist on the default branch. Retire the previous check requirements during
+that migration; changing requirements before the new checks exist blocks PRs.
+The weekly security schedule is preserved.
+
+Safety executes the base revision's `.github/scripts/safety.sh`. The initial
+migration uses the PR copy only when the base has no script yet. Changes to
+the script, `.github/safety-critical.txt` or `.github/workflows/ci.yml` require
+owner review. Optional critical-path rules are read from the base revision;
+API failures fail the check.
 
 How the workflows are kept safe:
 
