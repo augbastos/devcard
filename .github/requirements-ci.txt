@@ -1,2 +1,2 @@
 tzdata==2025.2; sys_platform == "win32"
-setuptools==80.9.0
+setuptools==84.1.0
