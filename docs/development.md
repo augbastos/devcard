@@ -3,6 +3,7 @@
 ## Running the tests
 
 ```bash
+python scripts/run_tests.py                            # all Python modules, parallel processes
 python -m unittest discover -s hook -p "test_*.py"    # hook, git integration, installer
 python -m unittest discover -s tests -t .              # devcard package: renderer, publish, init
 pipx run ruff==0.16.7 check .                          # Python lint (rules in ruff.toml)
@@ -16,6 +17,16 @@ npm test                                               # Worker, in workerd + lo
 The Python side is standard library only, so there is nothing to install for it
 (on Windows, `pip install tzdata` for the tests that render in a fixed timezone).
 `python -m devcard ...` runs the command line from a checkout.
+
+CI runs the Python modules in separate processes, up to the CPU count in the
+same job. Each module keeps its existing fixtures and assertions; temporary
+repositories and databases are independent, HTTP tests use ephemeral ports,
+and process-local mocks cannot leak into another module. The runner prints
+per-module elapsed time and fails if any module fails or cannot start. Use
+`python scripts/run_tests.py --jobs 1` for a sequential timing comparison.
+The OS/runtime matrix and the `ci-ok` aggregate stay unchanged. Dependency
+caches use the pinned CI requirements and the Worker's npm lockfile; only
+superseded pull-request runs are cancelled.
 
 ## Golden files
 
