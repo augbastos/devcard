@@ -79,9 +79,9 @@ class WorkflowTests(unittest.TestCase):
                 needs = {key: {'result': 'success'} for key in (*required, 'safety', 'dependencies')}
                 needs['safety']['result'] = safety
                 needs['dependencies']['result'] = dependencies
-                # Only Safety may be skipped, and only outside pull_request.
+                # Only Safety may be skipped, and only on push.
                 expected = dependencies == 'success' and (
-                    safety == 'success' or (safety == 'skipped' and event != 'pull_request'))
+                    safety == 'success' or (safety == 'skipped' and event == 'push'))
                 cases.append((needs, expected))
             for job, state in itertools.product(required, ('failure', 'skipped', 'cancelled')):
                 needs = {key: {'result': 'success'} for key in (*required, 'safety', 'dependencies')}
